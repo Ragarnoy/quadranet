@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 lora-phy = "2.1"
+embassy-time = "0.1.1"
+embedded-hal-async = "0.2.0-alpha.2"
