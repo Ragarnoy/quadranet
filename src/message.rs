@@ -39,10 +39,10 @@ impl Message {
     }
 }
 
-impl From<Message> for [u8; 74] {
+impl From<Message> for [u8; MESSAGE_SIZE] {
     // Adjusted size to 74 bytes
     fn from(message: Message) -> Self {
-        let mut bytes = [0u8; 74];
+        let mut bytes = [0u8; MESSAGE_SIZE];
 
         // Convert sender_uid to bytes and copy to the array
         let sender_bytes = message.sender_uid.get().to_le_bytes();
@@ -70,7 +70,7 @@ impl From<Message> for [u8; 74] {
 
         // Copy sequence_number
         let sequence_bytes = message.sequence_number.to_le_bytes();
-        bytes[72..=74].copy_from_slice(&sequence_bytes);
+        bytes[72..74].copy_from_slice(&sequence_bytes);
 
         bytes
     }
@@ -114,10 +114,10 @@ impl TryFrom<&[u8]> for Message {
 
         // Deserialize content
         let mut content = [0u8; 64];
-        content.copy_from_slice(&bytes[7..72]);
+        content.copy_from_slice(&bytes[7..71]);
 
         // Deserialize ttl
-        let ttl = bytes[72];
+        let ttl = bytes[71];
 
         // Deserialize sequence_number
         let sequence_number = u16::from_le_bytes([bytes[72], bytes[73]]);
