@@ -1,3 +1,4 @@
+use core::fmt::Display;
 use crate::device::Uid;
 use core::num::NonZeroU16;
 use snafu::Snafu;
@@ -12,6 +13,18 @@ pub struct Message {
     content: [u8; 64],
     ttl: u8,
     sequence_number: u16,
+}
+
+impl Display for Message {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "Sender UID: {}", self.sender_uid)?;
+        writeln!(f, "Receiver UID: {}", self.receiver_uid.map_or(0, |uid| uid.get()))?;
+        writeln!(f, "Next hop: {}", self.next_hop.map_or(0, |uid| uid.get()))?;
+        writeln!(f, "Length: {}", self.length)?;
+        writeln!(f, "Content: {:?}", self.content)?;
+        writeln!(f, "TTL: {}", self.ttl)?;
+        writeln!(f, "Sequence number: {}", self.sequence_number)
+    }
 }
 
 impl Message {
