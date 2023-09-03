@@ -8,6 +8,7 @@ use lora_phy::mod_traits::RadioKind;
 use crate::device::LoraDevice;
 use crate::message::Message;
 use crate::network::mesh_error::MeshError;
+use crate::network::route::Route;
 use crate::network::routing_table::RoutingTable;
 
 pub struct MeshNetwork<RK, DLY>
@@ -38,6 +39,31 @@ impl <RK, DLY> MeshNetwork<RK, DLY>
 
     pub async fn start_discovery(&mut self) -> Result<(), RadioError> {
         self.discover_nodes(0).await
+    }
+
+    pub async fn receive_message(&mut self) -> Result<Message, MeshError> {
+        let mut buf = [0u8; 74];  // Buffer to hold incoming message
+        let (rx_length, _packet_status) = self.device.receive_message(&mut buf).await.map_err(|e| MeshError::DeviceError { source: e.into() })?;
+
+        // Deserialize the received message
+        let received_message = Message::try_from(&buf[0..rx_length as usize])
+            .map_err(|e| MeshError::MessageError { source: e })?;
+
+        // Update the routing table
+        self.routing_table.update(received_message.sender_uid.get(), Route { next_hop: received_message.sender_uid });
+
+        // Check if the message is for this node or needs to be forwarded
+        if let Some(receiver_uid) = received_message.receiver_uid {
+            if receiver_uid.get() == self.device.uid.get() {
+                // Process the message
+                // ...
+            } else {
+                // Forward the message to the next hop
+                self.send_message(received_message.clone()).await?;
+            }
+        }
+
+        Ok(received_message)
     }
 
     pub async fn send_message(&mut self, mut message: Message) -> Result<(), MeshError> {
