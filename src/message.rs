@@ -5,6 +5,7 @@ use snafu::Snafu;
 
 const MESSAGE_SIZE: usize = 74;
 
+#[derive(Debug, Clone)]
 pub struct Message {
     pub sender_uid: Uid,
     pub receiver_uid: Option<Uid>,
