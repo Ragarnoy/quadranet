@@ -98,7 +98,7 @@ where
                 Ok((rx_length, packet_status))
             }
             Err(err) => {
-                return Err(err.into());
+                Err(err.into())
             },
         }
     }

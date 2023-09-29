@@ -43,7 +43,7 @@ impl <RK, DLY> MeshNetwork<RK, DLY>
 
     pub async fn receive_message(&mut self) -> Result<Message, MeshError> {
         let mut buf = [0u8; 74];  // Buffer to hold incoming message
-        let (rx_length, _packet_status) = self.device.receive_message(&mut buf).await.map_err(|e| MeshError::DeviceError { source: e.into() })?;
+        let (rx_length, _packet_status) = self.device.receive_message(&mut buf).await.map_err(|source| MeshError::DeviceError { source })?;
 
         // Deserialize the received message
         let received_message = Message::try_from(&buf[0..rx_length as usize])
