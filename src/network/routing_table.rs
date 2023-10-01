@@ -17,7 +17,12 @@ impl RoutingTable {
     pub fn update(&mut self, destination: u16, route: Route) {
         // Insert or update the route for the given destination
         // Note: `insert` returns an Err if the map is full
-        let _ = self.routes.insert(destination, route);
+        if let Err((destination, route)) = self.routes.insert(destination, route) {
+            // Remove the oldest entry
+            let _ = self.routes.remove(&destination);
+            // Insert the new entry
+            let _ = self.routes.insert(destination, route);
+        }
     }
 
     pub fn lookup_route(&self, destination: u16) -> Option<Route> {
