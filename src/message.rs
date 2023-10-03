@@ -1,7 +1,11 @@
+pub mod content;
+mod error;
+
 use core::fmt::Display;
 use crate::device::Uid;
 use core::num::NonZeroU16;
 use snafu::Snafu;
+use crate::message::error::MessageError;
 
 pub const MESSAGE_SIZE: usize = 74;
 
@@ -146,16 +150,4 @@ impl TryFrom<&[u8]> for Message {
             sequence_number,
         })
     }
-}
-
-#[derive(Debug, Snafu)]
-pub enum MessageError {
-    #[snafu(display("Invalid UID"))]
-    InvalidUid,
-    #[snafu(display("Invalid length"))]
-    InvalidLength,
-    #[snafu(display("Invalid TTL"))]
-    InvalidTtl,
-    #[snafu(display("Invalid sequence number"))]
-    InvalidSequenceNumber,
 }
