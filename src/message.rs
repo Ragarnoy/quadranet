@@ -3,7 +3,7 @@ use crate::device::Uid;
 use core::num::NonZeroU16;
 use snafu::Snafu;
 
-const MESSAGE_SIZE: usize = 74;
+pub const MESSAGE_SIZE: usize = 74;
 
 #[derive(Debug, Clone)]
 pub struct Message {

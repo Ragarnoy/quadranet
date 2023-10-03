@@ -33,7 +33,7 @@ impl <RK, DLY> MeshNetwork<RK, DLY>
     }
 
     pub async fn discover_nodes(&mut self, depth: u16) -> Result<(), RadioError> {
-        let message = Message::new_discovery(self.device.uid, depth);
+        let message = Message::new_discovery(self.device.uid(), depth);
         self.device.send_message(message).await
     }
 
@@ -54,7 +54,7 @@ impl <RK, DLY> MeshNetwork<RK, DLY>
 
         // Check if the message is for this node or needs to be forwarded
         if let Some(receiver_uid) = received_message.receiver_uid {
-            if receiver_uid.get() == self.device.uid.get() {
+            if receiver_uid.get() == self.device.uid().get() {
                 // Process the message
                 // ...
             } else {

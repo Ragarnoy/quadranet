@@ -17,7 +17,7 @@ where
     RK: RadioKind,
     DLY: DelayUs,
 {
-    pub(crate) uid: Uid,
+    uid: Uid,
     radio: LoRa<RK, DLY>,
     config: LoraConfig,
     state: DeviceState,
@@ -41,6 +41,10 @@ where
             config,
             state: DeviceState::Idle,
         }
+    }
+
+    pub fn uid(&self) -> Uid {
+        self.uid
     }
 
     pub async fn send_message(&mut self, mut message: Message) -> Result<(), RadioError> {
