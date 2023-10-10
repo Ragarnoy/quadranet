@@ -1,6 +1,7 @@
+use defmt::Format;
 use crate::message::error::MessageError;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Format)]
 pub enum Intent {
     Data,
     Discover,

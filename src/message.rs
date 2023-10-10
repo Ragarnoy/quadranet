@@ -8,10 +8,11 @@ use core::num::NonZeroU8;
 use crate::message::error::MessageError;
 use crate::message::intent::Intent;
 use core::convert::TryFrom;
+use defmt::Format;
 
 pub const MESSAGE_SIZE: usize = 70;  // Adjusted size
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Format)]
 pub struct Message {
     pub intent: Intent,
     pub sender_uid: Uid,
