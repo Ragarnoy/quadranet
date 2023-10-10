@@ -1,8 +1,9 @@
+use defmt::Format;
 use snafu::Snafu;
 use crate::device::DeviceError;
 use crate::message::error::MessageError;
 
-#[derive(Debug, Snafu)]
+#[derive(Debug, Snafu, Format)]
 pub enum MeshError {
     #[snafu(display("Route not found"))]
     RouteNotFound,
