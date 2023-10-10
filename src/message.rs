@@ -82,7 +82,6 @@ impl Message {
     // Specialized constructor for Information
     // Placeholder: Requires implementation of information-specific logic
     pub fn information(sender_uid: Uid) -> Self {
-        // TODO: Implement information-specific logic here
         Self::new(Intent::Information, sender_uid, None, [0u8; 64])
     }
 
