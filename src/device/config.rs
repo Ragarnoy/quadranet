@@ -4,7 +4,7 @@ use lora_phy::mod_params::{Bandwidth, CodingRate, ModulationParams, PacketParams
 use lora_phy::mod_traits::RadioKind;
 use crate::message::MESSAGE_SIZE;
 
-pub const LORA_FREQUENCY_IN_HZ: u32 = 432_000_000;
+pub const LORA_FREQUENCY_IN_HZ: u32 = 433_220_000;
 const TX_POWER: i32 = 20;
 
 pub struct LoraConfig {
