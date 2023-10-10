@@ -1,6 +1,6 @@
 use snafu::Snafu;
 use crate::device::DeviceError;
-use crate::message::MessageError;
+use crate::message::error::MessageError;
 
 #[derive(Debug, Snafu)]
 pub enum MeshError {

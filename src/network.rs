@@ -2,11 +2,13 @@ mod routing_table;
 mod mesh_error;
 mod route;
 
+use defmt::info;
 use embedded_hal_async::delay::DelayUs;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
 use crate::device::LoraDevice;
-use crate::message::Message;
+use crate::message::{Message, MESSAGE_SIZE};
+use crate::message::intent::Intent;
 use crate::network::mesh_error::MeshError;
 use crate::network::route::Route;
 use crate::network::routing_table::RoutingTable;
@@ -32,17 +34,21 @@ impl <RK, DLY> MeshNetwork<RK, DLY>
         }
     }
 
-    pub async fn discover_nodes(&mut self, depth: u16) -> Result<(), RadioError> {
-        let message = Message::new_discovery(self.device.uid(), depth);
+    pub async fn discover_nodes(&mut self, depth: u8) -> Result<(), RadioError> {
+        if depth == 0 {
+            return Ok(());
+        }
+        let message = Message::discover(self.device.uid(), depth - 1); // Decrement depth
         self.device.send_message(message).await
     }
+
 
     pub async fn start_discovery(&mut self) -> Result<(), RadioError> {
         self.discover_nodes(0).await
     }
 
     pub async fn receive_message(&mut self) -> Result<Message, MeshError> {
-        let mut buf = [0u8; 74];  // Buffer to hold incoming message
+        let mut buf = [0u8; MESSAGE_SIZE];  // Buffer to hold incoming message
         let (rx_length, _packet_status) = self.device.receive_message(&mut buf).await.map_err(|source| MeshError::DeviceError { source })?;
 
         // Deserialize the received message
@@ -55,9 +61,24 @@ impl <RK, DLY> MeshNetwork<RK, DLY>
         // Check if the message is for this node or needs to be forwarded
         if let Some(receiver_uid) = received_message.receiver_uid {
             if receiver_uid.get() == self.device.uid().get() {
-                // Process the message
-                // ...
-            } else {
+                // Log the message or trigger some action
+                match received_message.intent {
+                    Intent::Ping => {
+                        self.send_message(Message::pong(self.device.uid(), received_message.sender_uid)).await?;
+                    }
+                    Intent::Data => {
+                        info!("Received data: {:?} from {}", &received_message.content[0..received_message.length() as usize], received_message.sender_uid.get());
+                    }
+                    Intent::Discover => {
+                        let depth = received_message.content[0];
+                        if depth > 0 {
+                            self.discover_nodes(depth - 1).await.unwrap();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            else {
                 // Forward the message to the next hop
                 self.send_message(received_message.clone()).await?;
             }
@@ -77,5 +98,4 @@ impl <RK, DLY> MeshNetwork<RK, DLY>
 
         Ok(())
     }
-
 }

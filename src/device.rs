@@ -1,7 +1,8 @@
 pub mod config;
+pub mod outstack;
 
-use core::num::NonZeroU16;
-use crate::message::{Message, MESSAGE_SIZE};
+use core::num::NonZeroU8;
+use crate::message::Message;
 use config::LoraConfig;
 use embassy_time::{Duration, Timer};
 use embedded_hal_async::delay::DelayUs;
@@ -10,7 +11,7 @@ use lora_phy::mod_traits::RadioKind;
 use lora_phy::LoRa;
 use snafu::Snafu;
 
-pub type Uid = NonZeroU16;
+pub type Uid = NonZeroU8;
 
 pub struct LoraDevice<RK, DLY>
 where
@@ -57,10 +58,10 @@ where
             .await?;
         self.state = DeviceState::Transmitting;
 
-        Timer::after(Duration::from_millis(400)).await;
+        Timer::after(Duration::from_millis(300)).await;
 
         message.sender_uid = self.uid;
-        let buffer: [u8; 74] = message.into();
+        let buffer: [u8; 70] = message.into();
         match self
             .radio
             .tx(
@@ -106,43 +107,6 @@ where
             },
         }
     }
-
-    pub async fn default_routine(&mut self) -> Result<(), DeviceError> {
-        unimplemented!();
-        loop {
-            // Step 1: Listen for incoming messages
-            let mut buf = [0u8; MESSAGE_SIZE]; // Buffer to hold incoming message
-            match self.receive_message(&mut buf).await {
-                Ok((rx_length, _packet_status)) => {
-                    // Handle the received message
-                    // ...
-                }
-                Err(err) => {
-                    // Handle the error
-                    // ...
-                }
-            }
-
-            // Step 2: Perform any sending tasks, if needed
-            if let Some(message_to_send) = todo!() {
-                match self.send_message(message_to_send).await {
-                    Ok(()) => {
-                        // Message sent successfully
-                    }
-                    Err(err) => {
-                        // Handle the error
-                    }
-                }
-            }
-
-            // Step 3: Perform any other tasks or checks
-            // ...
-
-            // Delay before the next iteration
-            Timer::after(Duration::from_millis(100)).await;
-        }
-    }
-
 }
 
 #[derive(Debug, Snafu)]

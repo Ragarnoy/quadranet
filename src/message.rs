@@ -1,94 +1,122 @@
 pub mod content;
-mod error;
+pub mod error;
+pub mod intent;
 
 use core::fmt::Display;
 use crate::device::Uid;
-use core::num::NonZeroU16;
-use snafu::Snafu;
+use core::num::NonZeroU8;
 use crate::message::error::MessageError;
+use crate::message::intent::Intent;
+use core::convert::TryFrom;
 
-pub const MESSAGE_SIZE: usize = 74;
+pub const MESSAGE_SIZE: usize = 70;  // Adjusted size
 
 #[derive(Debug, Clone)]
 pub struct Message {
+    pub intent: Intent,
     pub sender_uid: Uid,
     pub receiver_uid: Option<Uid>,
     pub next_hop: Option<Uid>,
     length: u8,
-    content: [u8; 64],
-    ttl: u8,
-    sequence_number: u16,
+    pub ttl: u8,
+    pub content: [u8; 64],
 }
 
 impl Display for Message {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        writeln!(f, "Sender UID: {}", self.sender_uid)?;
-        writeln!(f, "Receiver UID: {}", self.receiver_uid.map_or(0, |uid| uid.get()))?;
-        writeln!(f, "Next hop: {}", self.next_hop.map_or(0, |uid| uid.get()))?;
-        writeln!(f, "Length: {}", self.length)?;
-        writeln!(f, "Content: {:?}", self.content)?;
-        writeln!(f, "TTL: {}", self.ttl)?;
-        writeln!(f, "Sequence number: {}", self.sequence_number)
+        writeln!(f, "----------------------------------------")?;
+        writeln!(f, "| Field        | Value                |")?;
+        writeln!(f, "|--------------|----------------------|")?;
+        writeln!(f, "| Intent       | {:<20?} |", self.intent)?;
+        writeln!(f, "| Sender UID   | {:<20} |", self.sender_uid.get())?;
+        writeln!(f, "| Receiver UID | {:<20} |", self.receiver_uid.map_or(0, |uid| uid.get()))?;
+        writeln!(f, "| Next Hop     | {:<20} |", self.next_hop.map_or(0, |uid| uid.get()))?;
+        writeln!(f, "| Length       | {:<20} |", self.length)?;
+        writeln!(f, "| ttl          | {:<20} |", self.ttl)?;
+        writeln!(f, "| Content      | {:?} |", &self.content[0..self.length as usize])?;
+        writeln!(f, "----------------------------------------")
     }
 }
 
 impl Message {
-    pub fn new(
-        sender_uid: Uid,
-        receiver_uid: Option<Uid>,
-        content: [u8; 64],
-        ttl: u8,
-        sequence_number: u16,
-    ) -> Self {
+    // General constructor
+    fn new(intent: Intent, sender_uid: Uid, receiver_uid: Option<Uid>, content: [u8; 64]) -> Self {
         let length = content.len() as u8;
         Self {
+            intent,
             sender_uid,
             receiver_uid,
             next_hop: None,
             length,
+            ttl: 0,
             content,
-            ttl,
-            sequence_number,
         }
     }
 
-    pub fn new_discovery(sender_uid: Uid, sequence_number: u16) -> Self {
-        Self::new(sender_uid, None, [0u8; 64], 0, sequence_number)
+    /// Returns the length of the message
+    pub fn length(&self) -> u8 {
+        self.length
+    }
+
+    /// Specialized constructor for Ping
+    pub fn ping(sender_uid: Uid) -> Self {
+        Self::new(Intent::Ping, sender_uid, None, [0u8; 64])
+    }
+
+    pub fn pong(sender_uid: Uid, receiver_uid: Uid) -> Self {
+        Self::new(Intent::Pong, sender_uid, Some(receiver_uid), [0u8; 64])
+    }
+
+    // Specialized constructor for Data
+    pub fn data(sender_uid: Uid, receiver_uid: Uid, content: [u8; 64]) -> Self {
+        Self::new(Intent::Data, sender_uid, Some(receiver_uid), content)
+    }
+
+    // Specialized constructor for Discover
+    pub fn discover(sender_uid: Uid, depth: u8) -> Self {
+        let mut content = [0u8; 64];
+        content[0] = depth; // Store the depth in the first byte of the content
+        Self::new(Intent::Discover, sender_uid, None, content)
+    }
+
+    // Specialized constructor for Information
+    // Placeholder: Requires implementation of information-specific logic
+    pub fn information(sender_uid: Uid) -> Self {
+        // TODO: Implement information-specific logic here
+        Self::new(Intent::Information, sender_uid, None, [0u8; 64])
+    }
+
+    // Specialized constructor for Error
+    pub fn error(sender_uid: Uid, content: [u8; 64]) -> Self {
+        Self::new(Intent::Error, sender_uid, None, content)
     }
 }
 
+
 impl From<Message> for [u8; MESSAGE_SIZE] {
-    // Adjusted size to 74 bytes
     fn from(message: Message) -> Self {
         let mut bytes = [0u8; MESSAGE_SIZE];
 
+        // Convert intent to bytes and copy to the array
+        bytes[0] = message.intent as u8;
+
         // Convert sender_uid to bytes and copy to the array
-        let sender_bytes = message.sender_uid.get().to_le_bytes();
-        bytes[0..2].copy_from_slice(&sender_bytes);
+        bytes[1] = message.sender_uid.get();
 
         // Convert receiver_uid to bytes and copy to the array
-        let receiver_bytes = message
-            .receiver_uid
-            .map_or([0u8; 2], |uid| uid.get().to_le_bytes());
-        bytes[2..4].copy_from_slice(&receiver_bytes);
+        bytes[2] = message.receiver_uid.map_or(0, |uid| uid.get());
 
-        let next_hop_bytes = message
-            .next_hop
-            .map_or([0u8; 2], |uid| uid.get().to_le_bytes());
-        bytes[4..6].copy_from_slice(&next_hop_bytes);
+        // Convert next_hop to bytes and copy to the array
+        bytes[3] = message.next_hop.map_or(0, |uid| uid.get());
 
         // Copy length
-        bytes[6] = message.length;
-
-        // Copy content
-        bytes[7..71].copy_from_slice(&message.content);
+        bytes[4] = message.length;
 
         // Copy ttl
-        bytes[71] = message.ttl;
+        bytes[5] = message.ttl;
 
-        // Copy sequence_number
-        let sequence_bytes = message.sequence_number.to_le_bytes();
-        bytes[72..74].copy_from_slice(&sequence_bytes);
+        // Copy content
+        bytes[6..70].copy_from_slice(&message.content);
 
         bytes
     }
@@ -98,56 +126,52 @@ impl TryFrom<&[u8]> for Message {
     type Error = MessageError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        if bytes.len() != 74 {
+        if bytes.len() != MESSAGE_SIZE {
             return Err(MessageError::InvalidLength);
         }
 
+        // Deserialize intent
+        let intent = Intent::try_from(bytes[0])?;
+
         // Deserialize sender_uid
-        let sender_uid = NonZeroU16::new(u16::from_le_bytes([bytes[0], bytes[1]]))
+        let sender_uid = NonZeroU8::new(bytes[1])
             .ok_or(MessageError::InvalidUid)?;
 
         // Deserialize receiver_uid
-        let receiver_uid_bytes = [bytes[2], bytes[3]];
-        let receiver_uid = if receiver_uid_bytes == [0u8; 2] {
+        let receiver_uid = if bytes[2] == 0 {
             None
         } else {
-            Some(
-                NonZeroU16::new(u16::from_le_bytes(receiver_uid_bytes))
-                    .ok_or(MessageError::InvalidUid)?,
-            )
+            Some(NonZeroU8::new(bytes[2])
+                .ok_or(MessageError::InvalidUid)?)
         };
 
-        let next_hop = [bytes[4], bytes[5]];
-        let next_hop = if next_hop == [0u8; 2] {
+        // Deserialize next_hop
+        let next_hop = if bytes[3] == 0 {
             None
         } else {
-            Some(
-                NonZeroU16::new(u16::from_le_bytes(next_hop))
-                    .ok_or(MessageError::InvalidUid)?,
-            )
+            Some(NonZeroU8::new(bytes[3])
+                .ok_or(MessageError::InvalidUid)?)
         };
 
         // Deserialize length
-        let length = bytes[6];
+        let length = bytes[4];
+
+        // Deserialize ttl
+        let ttl = bytes[5];
 
         // Deserialize content
         let mut content = [0u8; 64];
-        content.copy_from_slice(&bytes[7..71]);
-
-        // Deserialize ttl
-        let ttl = bytes[71];
-
-        // Deserialize sequence_number
-        let sequence_number = u16::from_le_bytes([bytes[72], bytes[73]]);
+        content.copy_from_slice(&bytes[6..70]);
 
         Ok(Self {
+            intent,
             sender_uid,
             receiver_uid,
             next_hop,
             length,
-            content,
             ttl,
-            sequence_number,
+            content,
         })
     }
 }
+
