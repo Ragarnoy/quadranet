@@ -2,6 +2,7 @@ pub mod config;
 pub mod outstack;
 
 use core::num::NonZeroU8;
+use defmt::Format;
 use crate::message::Message;
 use config::LoraConfig;
 use embassy_time::{Duration, Timer};
@@ -109,7 +110,7 @@ where
     }
 }
 
-#[derive(Debug, Snafu)]
+#[derive(Debug, Snafu, Format)]
 pub enum DeviceError {
     #[snafu(display("Radio error: {:?}", error))]
     RadioError { error: RadioError },
