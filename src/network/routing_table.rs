@@ -24,7 +24,9 @@ impl RoutingTable {
             // Insert the new entry
             let _ = self.routes.insert(destination, route);
         }
-        info!("Routing table: {:?}", self.routes)
+        for (destination, route) in self.routes.iter() {
+            info!("{} -> {}", destination, route.next_hop);
+        }
     }
 
     pub fn lookup_route(&self, destination: u8) -> Option<Route> {
