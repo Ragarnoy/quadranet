@@ -175,3 +175,51 @@ impl TryFrom<&[u8]> for Message {
     }
 }
 
+#[cfg(test)]
+mod test {
+    use crate::message::Message;
+    use crate::message::intent::Intent;
+    use crate::device::Uid;
+    use core::convert::TryFrom;
+    use core::num::NonZeroU8;
+
+    #[test]
+    fn test_message_ping() {
+        let sender_uid = Uid::try_from(NonZeroU8::new(0x01).unwrap()).unwrap();
+        let message = Message::ping(sender_uid);
+        assert_eq!(message.intent, Intent::Ping);
+        assert_eq!(message.sender_uid, sender_uid);
+        assert_eq!(message.receiver_uid, None);
+        assert_eq!(message.length, 0);
+        assert_eq!(message.ttl, 0);
+        assert_eq!(message.content, [0u8; 64]);
+    }
+
+    #[test]
+    fn test_message_pong() {
+        let sender_uid = Uid::try_from(NonZeroU8::new(0x01).unwrap()).unwrap();
+        let receiver_uid = Uid::try_from(NonZeroU8::new(0x02).unwrap()).unwrap();
+        let message = Message::pong(sender_uid, receiver_uid);
+        assert_eq!(message.intent, Intent::Pong);
+        assert_eq!(message.sender_uid, sender_uid);
+        assert_eq!(message.receiver_uid, Some(receiver_uid));
+        assert_eq!(message.length, 0);
+        assert_eq!(message.ttl, 0);
+        assert_eq!(message.content, [0u8; 64]);
+    }
+
+    #[test]
+    fn test_message_data() {
+        let sender_uid = Uid::try_from(NonZeroU8::new(0x01).unwrap()).unwrap();
+        let receiver_uid = Uid::try_from(NonZeroU8::new(0x02).unwrap()).unwrap();
+        let mut content: [u8; 64] = [0x0; 64];
+        content[0..4].copy_from_slice(&[0x01, 0x02, 0x03, 0x04]);
+        let message = Message::data(sender_uid, receiver_uid, content);
+        assert_eq!(message.intent, Intent::Data);
+        assert_eq!(message.sender_uid, sender_uid);
+        assert_eq!(message.receiver_uid, Some(receiver_uid));
+        assert_eq!(message.length, 4);
+        assert_eq!(message.ttl, 0);
+        assert_eq!(message.content, content);
+    }
+}
