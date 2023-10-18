@@ -2,7 +2,6 @@ mod routing_table;
 mod mesh_error;
 mod route;
 
-use defmt::info;
 use embedded_hal_async::delay::DelayUs;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
@@ -66,7 +65,7 @@ impl <RK, DLY> MeshNetwork<RK, DLY>
                         self.send_message(Message::pong(self.device.uid(), received_message.sender_uid)).await?;
                     }
                     Intent::Data => {
-                        info!("Received data: {:?} from {}", &received_message.content[0..received_message.length() as usize], received_message.sender_uid.get());
+                        buf.copy_from_slice(&received_message.content);
                     }
                     Intent::Discover => {
                         let depth = received_message.content[0];
