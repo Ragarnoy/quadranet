@@ -1,6 +1,6 @@
-mod routing_table;
-mod mesh_error;
-mod route;
+pub mod routing_table;
+pub mod mesh_error;
+pub mod route;
 
 use embedded_hal_async::delay::DelayUs;
 use lora_phy::mod_params::RadioError;
