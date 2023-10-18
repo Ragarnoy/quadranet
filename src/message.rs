@@ -2,17 +2,26 @@ pub mod content;
 pub mod error;
 pub mod intent;
 
-use core::fmt::Display;
 use crate::device::Uid;
 use core::num::NonZeroU8;
 use crate::message::error::MessageError;
 use crate::message::intent::Intent;
 use core::convert::TryFrom;
-use defmt::Format;
+use core::mem::size_of;
 
-pub const MESSAGE_SIZE: usize = 70;  // Adjusted size
+const INTENT_SIZE: usize = size_of::<u8>();  // Assuming Intent is stored as u8
+const UID_SIZE: usize = size_of::<Uid>();
+const LENGTH_SIZE: usize = size_of::<u8>();
+const TTL_SIZE: usize = size_of::<u8>();
+const CONTENT_SIZE: usize = size_of::<[u8; 64]>();
 
-#[derive(Debug, Clone, Format)]
+// Calculate the total message size
+const CALCULATED_MESSAGE_SIZE: usize = INTENT_SIZE + 3 * UID_SIZE + LENGTH_SIZE + TTL_SIZE + CONTENT_SIZE;
+
+// Compile-time assertion to check if MESSAGE_SIZE matches the calculated size
+pub const MESSAGE_SIZE: usize = CALCULATED_MESSAGE_SIZE;
+
+#[derive(Debug, Clone)]
 pub struct Message {
     pub intent: Intent,
     pub sender_uid: Uid,
@@ -23,26 +32,26 @@ pub struct Message {
     pub content: [u8; 64],
 }
 
-impl Display for Message {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        writeln!(f, "----------------------------------------")?;
-        writeln!(f, "| Field        | Value                |")?;
-        writeln!(f, "|--------------|----------------------|")?;
-        writeln!(f, "| Intent       | {:<20?} |", self.intent)?;
-        writeln!(f, "| Sender UID   | {:<20} |", self.sender_uid.get())?;
-        writeln!(f, "| Receiver UID | {:<20} |", self.receiver_uid.map_or(0, |uid| uid.get()))?;
-        writeln!(f, "| Next Hop     | {:<20} |", self.next_hop.map_or(0, |uid| uid.get()))?;
-        writeln!(f, "| Length       | {:<20} |", self.length)?;
-        writeln!(f, "| ttl          | {:<20} |", self.ttl)?;
-        writeln!(f, "| Content      | {:?} |", &self.content[0..self.length as usize])?;
-        writeln!(f, "----------------------------------------")
+impl defmt::Format for Message {
+    fn format(&self, f: defmt::Formatter<'_>) {
+        defmt::write!(f, "Message {{");
+        defmt::write!(f, " intent: {:?},", self.intent);
+        defmt::write!(f, " sender_uid: {:?},", self.sender_uid);
+        defmt::write!(f, " receiver_uid: {:?},", self.receiver_uid);
+        defmt::write!(f, " next_hop: {:?},", self.next_hop);
+        defmt::write!(f, " length: {:?},", self.length);
+        defmt::write!(f, " ttl: {:?},", self.ttl);
+        defmt::write!(f, " content: {:?},", &self.content[0..self.length as usize]);
+        defmt::write!(f, "}}");
     }
 }
 
 impl Message {
     // General constructor
     fn new(intent: Intent, sender_uid: Uid, receiver_uid: Option<Uid>, content: [u8; 64]) -> Self {
-        let length = content.len() as u8;
+        let length = content.iter()
+            .take_while(|byte| **byte != 0)
+            .count() as u8;
         Self {
             intent,
             sender_uid,
@@ -184,25 +193,46 @@ mod test {
     use core::num::NonZeroU8;
 
     #[test]
-    fn test_message_ping() {
+    fn test_serialize_message() {
         let sender_uid = Uid::try_from(NonZeroU8::new(0x01).unwrap()).unwrap();
-        let message = Message::ping(sender_uid);
-        assert_eq!(message.intent, Intent::Ping);
-        assert_eq!(message.sender_uid, sender_uid);
-        assert_eq!(message.receiver_uid, None);
-        assert_eq!(message.length, 0);
-        assert_eq!(message.ttl, 0);
-        assert_eq!(message.content, [0u8; 64]);
+        let receiver_uid = Uid::try_from(NonZeroU8::new(0x02).unwrap()).unwrap();
+        let mut content: [u8; 64] = [0x0; 64];
+        content[0..4].copy_from_slice(&[0x01, 0x02, 0x03, 0x04]);
+        let message = Message::data(sender_uid, receiver_uid, content);
+        let bytes: [u8; 70] = message.into();
+        assert_eq!(bytes[0], Intent::Data as u8);
+        assert_eq!(bytes[1], sender_uid.get());
+        assert_eq!(bytes[2], receiver_uid.get());
+        assert_eq!(bytes[3], 0);
+        assert_eq!(bytes[4], 4);
+        assert_eq!(bytes[5], 0);
+        assert_eq!(bytes[6..10], [0x01, 0x02, 0x03, 0x04]);
     }
 
     #[test]
-    fn test_message_pong() {
+    fn test_deserialize_message() {
         let sender_uid = Uid::try_from(NonZeroU8::new(0x01).unwrap()).unwrap();
         let receiver_uid = Uid::try_from(NonZeroU8::new(0x02).unwrap()).unwrap();
-        let message = Message::pong(sender_uid, receiver_uid);
-        assert_eq!(message.intent, Intent::Pong);
+        let mut content: [u8; 64] = [0x0; 64];
+        content[0..4].copy_from_slice(&[0x01, 0x02, 0x03, 0x04]);
+        let message = Message::data(sender_uid, receiver_uid, content);
+        let bytes: [u8; 70] = message.into();
+        let deserialized_message = Message::try_from(&bytes[..]).unwrap();
+        assert_eq!(deserialized_message.intent, Intent::Data);
+        assert_eq!(deserialized_message.sender_uid, sender_uid);
+        assert_eq!(deserialized_message.receiver_uid, Some(receiver_uid));
+        assert_eq!(deserialized_message.length, 4);
+        assert_eq!(deserialized_message.ttl, 0);
+        assert_eq!(deserialized_message.content, content);
+    }
+
+    #[test]
+    fn test_message_ping() {
+        let sender_uid = Uid::try_from(NonZeroU8::new(0x01).unwrap()).unwrap();
+        let message = Message::ping(sender_uid);
+        assert_eq!(message.intent, Intent::Ping, "Ping intent");
         assert_eq!(message.sender_uid, sender_uid);
-        assert_eq!(message.receiver_uid, Some(receiver_uid));
+        assert_eq!(message.receiver_uid, None);
         assert_eq!(message.length, 0);
         assert_eq!(message.ttl, 0);
         assert_eq!(message.content, [0u8; 64]);
