@@ -1,3 +1,4 @@
+use defmt::info;
 use crate::network::route::Route;
 use heapless::FnvIndexMap;
 
@@ -23,6 +24,7 @@ impl RoutingTable {
             // Insert the new entry
             let _ = self.routes.insert(destination, route);
         }
+        info!("Routing table: {:?}", self.routes)
     }
 
     pub fn lookup_route(&self, destination: u8) -> Option<Route> {
