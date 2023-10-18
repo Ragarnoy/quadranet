@@ -17,8 +17,8 @@ pub struct MeshNetwork<RK, DLY>
         RK: RadioKind,
         DLY: DelayUs,
 {
-    device: LoraDevice<RK, DLY>,
-    routing_table: RoutingTable,
+    pub device: LoraDevice<RK, DLY>,
+    pub routing_table: RoutingTable,
 }
 
 impl <RK, DLY> MeshNetwork<RK, DLY>
