@@ -1,10 +1,10 @@
 use defmt::Format;
+use lora_phy::mod_params::RadioError;
 use snafu::Snafu;
-use crate::device::DeviceError;
 use crate::message::error::MessageError;
 
 #[derive(Debug, Snafu, Format)]
-pub enum MeshError {
+pub enum DeviceError {
     #[snafu(display("Route not found"))]
     RouteNotFound,
     #[snafu(display("Route error"))]
@@ -13,19 +13,17 @@ pub enum MeshError {
     MessageError {
         source: MessageError,
     },
-    #[snafu(display("Radio error: {}", source))]
-    DeviceError {
-        source: DeviceError,
+    #[snafu(display("Radio error: {:?}", error))]
+    RadioError { error: RadioError },
+}
+
+impl From<RadioError> for DeviceError {
+    fn from(error: RadioError) -> Self {
+        Self::RadioError { error }
     }
 }
 
-impl From<DeviceError> for MeshError {
-    fn from(error: DeviceError) -> Self {
-        Self::DeviceError { source: error }
-    }
-}
-
-impl From<MessageError> for MeshError {
+impl From<MessageError> for DeviceError {
     fn from(error: MessageError) -> Self {
         Self::MessageError { source: error }
     }
