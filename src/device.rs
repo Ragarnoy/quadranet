@@ -35,8 +35,8 @@ pub struct LoraDevice<RK, DLY>
     config: LoraConfig,
     radio: LoRa<RK, DLY>,
     state: DeviceState,
-    instack: InStack,
-    outstack: OutStack,
+    pub instack: InStack,
+    pub outstack: OutStack,
     routing_table: RoutingTable,
 }
 
@@ -135,12 +135,16 @@ impl<RK, DLY> LoraDevice<RK, DLY>
                 self.config.boosted,
             )
             .await?;
-        if let Some(route) = self.routing_table.lookup_route(message.receiver_uid.unwrap().get()) {
-            message.next_hop = Some(route.next_hop);
-        } else {
-            // Handle the case where the route is not found
-            warn!("Route not found");
+
+        if message.next_hop.is_none() && message.receiver_uid.is_some() {
+            if let Some(route) = self.routing_table.lookup_route(message.receiver_uid.unwrap().get()) {
+                message.next_hop = Some(route.next_hop);
+            } else {
+                // Handle the case where the route is not found
+                warn!("Route not found");
+            }
         }
+
         self.state = DeviceState::Transmitting;
         Timer::after(Duration::from_millis(200)).await;
         message.sender_uid = self.uid;
@@ -192,13 +196,17 @@ pub async fn run_device<RK, DLY>(mut device: LoraDevice<RK, DLY>, buf: &mut [u8]
         }
 
         // Process InStack
-        if let Err(e) = device.process_instack().await {
-            error!("Error processing instack: {:?}", e);
+        if !device.instack.is_empty() {
+            if let Err(e) = device.process_instack().await {
+                error!("Error processing instack: {:?}", e);
+            }
         }
 
         // Process OutStack
-        if let Err(e) = device.process_outstack().await {
-            error!("Error processing outstack: {:?}", e);
+        if !device.outstack.is_empty() {
+            if let Err(e) = device.process_outstack().await {
+                error!("Error processing outstack: {:?}", e);
+            }
         }
 
         // Add a delay or yield the task to prevent it from hogging the CPU
