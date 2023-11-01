@@ -63,6 +63,10 @@ impl<RK, DLY> LoraDevice<RK, DLY>
         }
     }
 
+    pub fn uid(&self) -> u8 {
+        self.uid.get()
+    }
+
     pub fn receive_message(&mut self, message: Message) {
         let route = Route {
             next_hop: message.sender_uid,  // The UID of the node that sent the message
