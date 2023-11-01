@@ -178,7 +178,7 @@ impl<RK, DLY> LoraDevice<RK, DLY>
     }
 }
 
-pub async fn run_device<RK, DLY>(device: &mut LoraDevice<RK, DLY>, buf: &mut [u8])
+pub async fn run_device<RK, DLY>(mut device: LoraDevice<RK, DLY>, buf: &mut [u8])
     where
         RK: RadioKind,
         DLY: DelayUs,
