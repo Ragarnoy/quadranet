@@ -183,6 +183,7 @@ pub async fn run_device<RK, DLY>(device: &mut LoraDevice<RK, DLY>, buf: &mut [u8
         // Listen for incoming messages
         if let Ok((rx_length, _packet_status)) = device.radio.rx(&device.config.rx_pkt_params, buf).await {
             let received_message = Message::try_from(&buf[0..rx_length as usize]).unwrap(); // Handle unwrap appropriately
+            info!("Received message: {:?}", received_message);
             device.receive_message(received_message);
         }
 
