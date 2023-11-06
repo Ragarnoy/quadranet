@@ -9,6 +9,7 @@ use embassy_time::{Duration, Timer};
 use embedded_hal_async::delay::DelayUs;
 use crate::device::config::LoraConfig;
 use crate::device::device_error::DeviceError;
+use crate::device::stacks::MessageStack;
 use crate::message::intent::Intent;
 use crate::message::Message;
 use crate::route::Route;
@@ -16,6 +17,7 @@ use crate::route::routing_table::RoutingTable;
 
 pub mod config;
 pub mod device_error;
+pub mod stacks;
 
 const INSTACK_SIZE: usize = 32;
 const OUTSTACK_SIZE: usize = 32;
@@ -26,17 +28,19 @@ pub type Uid = NonZeroU8;
 pub type InStack = Vec<Message, INSTACK_SIZE>;
 pub type OutStack = Vec<Message, OUTSTACK_SIZE>;
 
-pub struct LoraDevice<RK, DLY>
+pub struct LoraDevice<RK, DLY, IS, OS>
     where
         RK: RadioKind,
         DLY: DelayUs,
+        IS: MessageStack + 'static,
+        OS: MessageStack + 'static,
 {
     uid: Uid,
     config: LoraConfig,
     radio: LoRa<RK, DLY>,
     state: DeviceState,
-    pub instack: InStack,
-    pub outstack: OutStack,
+    pub instack: &'static mut IS,
+    pub outstack: &'static mut OS,
     routing_table: RoutingTable,
 }
 
@@ -46,19 +50,21 @@ pub enum DeviceState {
     Receiving,
 }
 
-impl<RK, DLY> LoraDevice<RK, DLY>
+impl<RK, DLY, IS, OS> LoraDevice<RK, DLY, IS, OS>
     where
         RK: RadioKind,
         DLY: DelayUs,
+        IS: MessageStack + 'static,
+        OS: MessageStack + 'static,
 {
-    pub fn new(uid: Uid, radio: LoRa<RK, DLY>, config: LoraConfig) -> Self {
+    pub fn new(uid: Uid, radio: LoRa<RK, DLY>, config: LoraConfig, instack: &'static mut IS, outstack: &'static mut OS) -> Self {
         Self {
             uid,
             radio,
             state: DeviceState::Idle,
             config,
-            instack: Vec::new(),
-            outstack: Vec::new(),
+            instack,
+            outstack,
             routing_table: RoutingTable::default(),
         }
     }
@@ -72,7 +78,7 @@ impl<RK, DLY> LoraDevice<RK, DLY>
             next_hop: message.sender_uid,  // The UID of the node that sent the message
             // ... other possible fields like cost, hop_count, etc.
         };
-        self.routing_table.update(message.sender_uid.get().into(), route);
+        self.routing_table.update(message.sender_uid.get(), route);
 
         if message.receiver_uid.unwrap().get() != self.uid.get() {
             self.outstack.push(message).unwrap(); // Handle this unwrap appropriately
@@ -182,10 +188,12 @@ impl<RK, DLY> LoraDevice<RK, DLY>
     }
 }
 
-pub async fn run_device<RK, DLY>(mut device: LoraDevice<RK, DLY>, buf: &mut [u8])
+pub async fn run_device<RK, DLY, IS, OS>(mut device: LoraDevice<RK, DLY, IS, OS>, buf: &mut [u8])
     where
         RK: RadioKind,
         DLY: DelayUs,
+        IS: MessageStack + 'static,
+        OS: MessageStack + 'static,
 {
     loop {
         // Listen for incoming messages
