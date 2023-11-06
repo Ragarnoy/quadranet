@@ -1,7 +1,7 @@
+use crate::message::error::MessageError;
 use defmt::Format;
 use lora_phy::mod_params::RadioError;
 use snafu::Snafu;
-use crate::message::error::MessageError;
 
 #[derive(Debug, Snafu, Format)]
 pub enum DeviceError {
@@ -10,9 +10,7 @@ pub enum DeviceError {
     #[snafu(display("Route error"))]
     RouteError,
     #[snafu(display("Message error: {}", source))]
-    MessageError {
-        source: MessageError,
-    },
+    MessageError { source: MessageError },
     #[snafu(display("Radio error: {:?}", error))]
     RadioError { error: RadioError },
 }

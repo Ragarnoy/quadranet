@@ -3,20 +3,21 @@ pub mod error;
 pub mod intent;
 
 use crate::device::Uid;
-use core::num::NonZeroU8;
 use crate::message::error::MessageError;
 use crate::message::intent::Intent;
 use core::convert::TryFrom;
 use core::mem::size_of;
+use core::num::NonZeroU8;
 
-const INTENT_SIZE: usize = size_of::<u8>();  // Assuming Intent is stored as u8
+const INTENT_SIZE: usize = size_of::<u8>(); // Assuming Intent is stored as u8
 const UID_SIZE: usize = size_of::<Uid>();
 const LENGTH_SIZE: usize = size_of::<u8>();
 const TTL_SIZE: usize = size_of::<u8>();
 const CONTENT_SIZE: usize = size_of::<[u8; 64]>();
 
 // Calculate the total message size
-const CALCULATED_MESSAGE_SIZE: usize = INTENT_SIZE + 3 * UID_SIZE + LENGTH_SIZE + TTL_SIZE + CONTENT_SIZE;
+const CALCULATED_MESSAGE_SIZE: usize =
+    INTENT_SIZE + 3 * UID_SIZE + LENGTH_SIZE + TTL_SIZE + CONTENT_SIZE;
 
 // Compile-time assertion to check if MESSAGE_SIZE matches the calculated size
 pub const MESSAGE_SIZE: usize = CALCULATED_MESSAGE_SIZE;
@@ -49,9 +50,7 @@ impl defmt::Format for Message {
 impl Message {
     // General constructor
     fn new(intent: Intent, sender_uid: Uid, receiver_uid: Option<Uid>, content: [u8; 64]) -> Self {
-        let length = content.iter()
-            .take_while(|byte| **byte != 0)
-            .count() as u8;
+        let length = content.iter().take_while(|byte| **byte != 0).count() as u8;
         Self {
             intent,
             sender_uid,
@@ -101,7 +100,6 @@ impl Message {
     }
 }
 
-
 impl From<Message> for [u8; MESSAGE_SIZE] {
     fn from(message: Message) -> Self {
         let mut bytes = [0u8; MESSAGE_SIZE];
@@ -143,23 +141,20 @@ impl TryFrom<&[u8]> for Message {
         let intent = Intent::try_from(bytes[0])?;
 
         // Deserialize sender_uid
-        let sender_uid = NonZeroU8::new(bytes[1])
-            .ok_or(MessageError::InvalidUid)?;
+        let sender_uid = NonZeroU8::new(bytes[1]).ok_or(MessageError::InvalidUid)?;
 
         // Deserialize receiver_uid
         let receiver_uid = if bytes[2] == 0 {
             None
         } else {
-            Some(NonZeroU8::new(bytes[2])
-                .ok_or(MessageError::InvalidUid)?)
+            Some(NonZeroU8::new(bytes[2]).ok_or(MessageError::InvalidUid)?)
         };
 
         // Deserialize next_hop
         let next_hop = if bytes[3] == 0 {
             None
         } else {
-            Some(NonZeroU8::new(bytes[3])
-                .ok_or(MessageError::InvalidUid)?)
+            Some(NonZeroU8::new(bytes[3]).ok_or(MessageError::InvalidUid)?)
         };
 
         // Deserialize length
@@ -186,9 +181,9 @@ impl TryFrom<&[u8]> for Message {
 
 #[cfg(test)]
 mod test {
-    use crate::message::Message;
-    use crate::message::intent::Intent;
     use crate::device::Uid;
+    use crate::message::intent::Intent;
+    use crate::message::Message;
     use core::convert::TryFrom;
     use core::num::NonZeroU8;
 

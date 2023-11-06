@@ -1,5 +1,5 @@
-use defmt::Format;
 use crate::message::error::MessageError;
+use defmt::Format;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Format)]
 pub enum Intent {

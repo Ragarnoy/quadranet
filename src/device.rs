@@ -1,19 +1,18 @@
-
-use core::num::NonZeroU8;
-use defmt::{error, info, warn};
-use heapless::Vec;
-use lora_phy::mod_params::RadioError;
-use lora_phy::mod_traits::RadioKind;
-use lora_phy::LoRa;
-use embassy_time::{Duration, Timer};
-use embedded_hal_async::delay::DelayUs;
 use crate::device::config::LoraConfig;
 use crate::device::device_error::DeviceError;
 use crate::device::stacks::MessageStack;
 use crate::message::intent::Intent;
 use crate::message::Message;
-use crate::route::Route;
 use crate::route::routing_table::RoutingTable;
+use crate::route::Route;
+use core::num::NonZeroU8;
+use defmt::{error, info, warn};
+use embassy_time::{Duration, Timer};
+use embedded_hal_async::delay::DelayUs;
+use heapless::Vec;
+use lora_phy::mod_params::RadioError;
+use lora_phy::mod_traits::RadioKind;
+use lora_phy::LoRa;
 
 pub mod config;
 pub mod device_error;
@@ -29,11 +28,11 @@ pub type InStack = Vec<Message, INSTACK_SIZE>;
 pub type OutStack = Vec<Message, OUTSTACK_SIZE>;
 
 pub struct LoraDevice<RK, DLY, IS, OS>
-    where
-        RK: RadioKind,
-        DLY: DelayUs,
-        IS: MessageStack + 'static,
-        OS: MessageStack + 'static,
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+    IS: MessageStack + 'static,
+    OS: MessageStack + 'static,
 {
     uid: Uid,
     config: LoraConfig,
@@ -51,13 +50,19 @@ pub enum DeviceState {
 }
 
 impl<RK, DLY, IS, OS> LoraDevice<RK, DLY, IS, OS>
-    where
-        RK: RadioKind,
-        DLY: DelayUs,
-        IS: MessageStack + 'static,
-        OS: MessageStack + 'static,
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+    IS: MessageStack + 'static,
+    OS: MessageStack + 'static,
 {
-    pub fn new(uid: Uid, radio: LoRa<RK, DLY>, config: LoraConfig, instack: &'static mut IS, outstack: &'static mut OS) -> Self {
+    pub fn new(
+        uid: Uid,
+        radio: LoRa<RK, DLY>,
+        config: LoraConfig,
+        instack: &'static mut IS,
+        outstack: &'static mut OS,
+    ) -> Self {
         Self {
             uid,
             radio,
@@ -75,15 +80,14 @@ impl<RK, DLY, IS, OS> LoraDevice<RK, DLY, IS, OS>
 
     pub fn receive_message(&mut self, message: Message) {
         let route = Route {
-            next_hop: message.sender_uid,  // The UID of the node that sent the message
-            // ... other possible fields like cost, hop_count, etc.
+            next_hop: message.sender_uid, // The UID of the node that sent the message
+                                          // ... other possible fields like cost, hop_count, etc.
         };
         self.routing_table.update(message.sender_uid.get(), route);
 
         if message.receiver_uid.unwrap().get() != self.uid.get() {
             self.outstack.push(message).unwrap(); // Handle this unwrap appropriately
-        }
-        else {
+        } else {
             self.instack.push(message).unwrap(); // Handle this unwrap appropriately
         }
     }
@@ -114,21 +118,20 @@ impl<RK, DLY, IS, OS> LoraDevice<RK, DLY, IS, OS>
             Intent::Ping => {
                 let pong_message = Message::pong(self.uid, message.sender_uid);
                 Some(pong_message)
-            },
+            }
             Intent::Data => {
                 info!("Received data: {:?}", message);
                 None
-            },
+            }
             Intent::Discover => {
                 let depth = message.content[0];
                 if depth > 0 {
                     Some(Message::discover(self.uid, depth - 1))
-                }
-                else {
+                } else {
                     None
                 }
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 
@@ -143,7 +146,10 @@ impl<RK, DLY, IS, OS> LoraDevice<RK, DLY, IS, OS>
             .await?;
 
         if message.next_hop.is_none() && message.receiver_uid.is_some() {
-            if let Some(route) = self.routing_table.lookup_route(message.receiver_uid.unwrap().get()) {
+            if let Some(route) = self
+                .routing_table
+                .lookup_route(message.receiver_uid.unwrap().get())
+            {
                 message.next_hop = Some(route.next_hop);
             } else {
                 // Handle the case where the route is not found
@@ -177,11 +183,11 @@ impl<RK, DLY, IS, OS> LoraDevice<RK, DLY, IS, OS>
 
     pub async fn listen_for_messages(&mut self, buf: &mut [u8]) -> Result<(), DeviceError> {
         loop {
-            let (rx_length, _packet_status) = self.radio
-                .rx(&self.config.rx_pkt_params, buf)
-                .await?;
+            let (rx_length, _packet_status) =
+                self.radio.rx(&self.config.rx_pkt_params, buf).await?;
 
-            let received_message = Message::try_from(&buf[0..rx_length as usize]).map_err(|source| DeviceError::MessageError { source })?;
+            let received_message = Message::try_from(&buf[0..rx_length as usize])
+                .map_err(|source| DeviceError::MessageError { source })?;
 
             self.receive_message(received_message);
         }
@@ -189,15 +195,17 @@ impl<RK, DLY, IS, OS> LoraDevice<RK, DLY, IS, OS>
 }
 
 pub async fn run_device<RK, DLY, IS, OS>(mut device: LoraDevice<RK, DLY, IS, OS>, buf: &mut [u8])
-    where
-        RK: RadioKind,
-        DLY: DelayUs,
-        IS: MessageStack + 'static,
-        OS: MessageStack + 'static,
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+    IS: MessageStack + 'static,
+    OS: MessageStack + 'static,
 {
     loop {
         // Listen for incoming messages
-        if let Ok((rx_length, _packet_status)) = device.radio.rx(&device.config.rx_pkt_params, buf).await {
+        if let Ok((rx_length, _packet_status)) =
+            device.radio.rx(&device.config.rx_pkt_params, buf).await
+        {
             let received_message = Message::try_from(&buf[0..rx_length as usize]).unwrap(); // Handle unwrap appropriately
             info!("Received message: {:?}", received_message);
             device.receive_message(received_message);

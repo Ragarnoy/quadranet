@@ -1,5 +1,5 @@
-use defmt::info;
 use crate::route::Route;
+use defmt::info;
 use heapless::FnvIndexMap;
 
 pub struct RoutingTable {

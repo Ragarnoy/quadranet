@@ -13,4 +13,3 @@ pub trait MessageStack {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
 }
-
