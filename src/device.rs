@@ -1,5 +1,4 @@
 use crate::device::config::LoraConfig;
-use crate::device::device_error::DeviceError;
 use crate::device::stacks::MessageStack;
 use crate::message::intent::Intent;
 use crate::message::Message;
@@ -85,11 +84,16 @@ where
         };
         self.routing_table.update(message.sender_uid.get(), route);
 
-        if message.receiver_uid.unwrap().get() != self.uid.get() {
-            self.outstack.push(message).unwrap(); // Handle this unwrap appropriately
+        if let Some(receiver) = message.receiver_uid {
+            if receiver.get() == self.uid.get() {
+                self.instack.push(message).unwrap(); // Handle this unwrap appropriately
+            } else {
+                self.outstack.push(message).unwrap(); // Handle this unwrap appropriately
+            }
         } else {
             self.instack.push(message).unwrap(); // Handle this unwrap appropriately
         }
+
     }
 
     pub async fn process_instack(&mut self) -> Result<(), RadioError> {
@@ -117,6 +121,7 @@ where
         match message.intent {
             Intent::Ping => {
                 let pong_message = Message::pong(self.uid, message.sender_uid);
+                info!("Pong!");
                 Some(pong_message)
             }
             Intent::Data => {
@@ -192,11 +197,13 @@ where
 {
     loop {
         // Attempt to receive messages for a certain duration (60% of the loop time)
-        let receive_duration = Duration::from_millis(600); // Adjust the duration as needed
+        let receive_duration = Duration::from_millis(800); // Adjust the duration as needed
         let receive_result = with_timeout(receive_duration, device.radio.rx(&device.config.rx_pkt_params, buf)).await;
 
         if let Ok(Ok((rx_length, _packet_status))) = receive_result {
-            let received_message = Message::try_from(&buf[0..rx_length as usize]).unwrap(); // Handle unwrap appropriately
+            let received_message = Message::try_from(&buf[0..rx_length as usize]).map_err(|e| {
+                error!("Error parsing message: {:?}", e);
+            }).unwrap();
             info!("Received message: {:?}", received_message);
             device.receive_message(received_message);
         }
