@@ -35,17 +35,20 @@ pub struct Message {
 
 impl defmt::Format for Message {
     fn format(&self, f: defmt::Formatter<'_>) {
-        defmt::write!(f, "Message {{");
-        defmt::write!(f, " intent: {:?},", self.intent);
-        defmt::write!(f, " sender_uid: {:?},", self.sender_uid);
-        defmt::write!(f, " receiver_uid: {:?},", self.receiver_uid);
-        defmt::write!(f, " next_hop: {:?},", self.next_hop);
-        defmt::write!(f, " length: {:?},", self.length);
-        defmt::write!(f, " ttl: {:?},", self.ttl);
-        defmt::write!(f, " content: {:?},", &self.content[0..self.length as usize]);
-        defmt::write!(f, "}}");
+        defmt::write!(f, "Message {{\n");
+        defmt::write!(f, "    intent: {:?},\n", self.intent);
+        defmt::write!(f, "    sender_uid: {:?},\n", self.sender_uid);
+        defmt::write!(f, "    receiver_uid: {:?},\n", self.receiver_uid);
+        defmt::write!(f, "    next_hop: {:?},\n", self.next_hop);
+        defmt::write!(f, "    length: {:?},\n", self.length);
+        defmt::write!(f, "    ttl: {:?},\n", self.ttl);
+        // Ensure that the content slice is within bounds before printing
+        let content_end = core::cmp::min(self.content.len(), self.length as usize);
+        defmt::write!(f, "    content: {:?},\n", &self.content[0..content_end]);
+        defmt::write!(f, "}}\n");
     }
 }
+
 
 impl Message {
     // General constructor
