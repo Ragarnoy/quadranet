@@ -196,16 +196,23 @@ where
     OS: MessageStack + 'static,
 {
     loop {
-        // Attempt to receive messages for a certain duration (60% of the loop time)
-        let receive_duration = Duration::from_millis(800); // Adjust the duration as needed
-        let receive_result = with_timeout(receive_duration, device.radio.rx(&device.config.rx_pkt_params, buf)).await;
+        device.radio.prepare_for_rx(&device.config.modulation, &device.config.rx_pkt_params,
+                                    Some(1), None,
+                                    false).await.expect("Failed to prepare for RX");
 
-        if let Ok(Ok((rx_length, _packet_status))) = receive_result {
-            let received_message = Message::try_from(&buf[0..rx_length as usize]).map_err(|e| {
-                error!("Error parsing message: {:?}", e);
-            }).unwrap();
-            info!("Received message: {:?}", received_message);
-            device.receive_message(received_message);
+        Timer::after(Duration::from_millis(50)).await;
+        match device.radio.rx(&device.config.rx_pkt_params, buf).await {
+            Ok((size, _status)) => {
+                if let Ok(message) = Message::try_from(&buf[..size as usize]) {
+                    info!("Received message: {:?}", message);
+                    device.receive_message(message);
+                } else {
+                    warn!("Received invalid message");
+                }
+            }
+            Err(e) => {
+                error!("Error receiving message: {:?}", e);
+            }
         }
 
         // Process InStack
