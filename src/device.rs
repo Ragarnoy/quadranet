@@ -161,6 +161,7 @@ where
         Timer::after(Duration::from_millis(200)).await;
         message.sender_uid = self.uid;
         let buffer: [u8; 70] = message.into();
+        info!("Sending message: {:?}", buffer);
         self.radio
             .tx(
                 &self.config.modulation,
@@ -188,6 +189,7 @@ where
 
             let received_message = Message::try_from(&buf[0..rx_length as usize])
                 .map_err(|source| DeviceError::MessageError { source })?;
+            info!("Received message: {:?}", received_message);
 
             self.receive_message(received_message);
         }
