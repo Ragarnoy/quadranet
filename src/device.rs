@@ -7,7 +7,7 @@ use crate::route::routing_table::RoutingTable;
 use crate::route::Route;
 use core::num::NonZeroU8;
 use defmt::{error, info, warn};
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Timer, with_timeout};
 use embedded_hal_async::delay::DelayUs;
 use heapless::Vec;
 use lora_phy::mod_params::RadioError;
@@ -181,19 +181,6 @@ where
         let message = Message::discover(self.uid, depth - 1); // Decrement depth
         self.send_message(message).await
     }
-
-    pub async fn listen_for_messages(&mut self, buf: &mut [u8]) -> Result<(), DeviceError> {
-        loop {
-            let (rx_length, _packet_status) =
-                self.radio.rx(&self.config.rx_pkt_params, buf).await?;
-
-            let received_message = Message::try_from(&buf[0..rx_length as usize])
-                .map_err(|source| DeviceError::MessageError { source })?;
-            info!("Received message: {:?}", received_message);
-
-            self.receive_message(received_message);
-        }
-    }
 }
 
 pub async fn run_device<RK, DLY, IS, OS>(mut device: LoraDevice<RK, DLY, IS, OS>, buf: &mut [u8])
@@ -204,10 +191,11 @@ where
     OS: MessageStack + 'static,
 {
     loop {
-        // Listen for incoming messages
-        if let Ok((rx_length, _packet_status)) =
-            device.radio.rx(&device.config.rx_pkt_params, buf).await
-        {
+        // Attempt to receive messages for a certain duration (60% of the loop time)
+        let receive_duration = Duration::from_millis(600); // Adjust the duration as needed
+        let receive_result = with_timeout(receive_duration, device.radio.rx(&device.config.rx_pkt_params, buf)).await;
+
+        if let Ok(Ok((rx_length, _packet_status))) = receive_result {
             let received_message = Message::try_from(&buf[0..rx_length as usize]).unwrap(); // Handle unwrap appropriately
             info!("Received message: {:?}", received_message);
             device.receive_message(received_message);
