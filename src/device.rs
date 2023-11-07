@@ -6,7 +6,7 @@ use crate::route::routing_table::RoutingTable;
 use crate::route::Route;
 use core::num::NonZeroU8;
 use defmt::{error, info, warn};
-use embassy_time::{Duration, Timer, with_timeout};
+use embassy_time::{Duration, Timer};
 use embedded_hal_async::delay::DelayUs;
 use heapless::Vec;
 use lora_phy::mod_params::RadioError;
@@ -209,6 +209,9 @@ where
                 } else {
                     warn!("Received invalid message");
                 }
+            }
+            Err(RadioError::ReceiveTimeout) => {
+               // Do nothing
             }
             Err(e) => {
                 error!("Error receiving message: {:?}", e);
