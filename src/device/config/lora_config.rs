@@ -2,7 +2,6 @@ use lora_phy::mod_params::{Bandwidth, CodingRate, ModulationParams, PacketParams
 use lora_phy::LoRa;
 use lora_phy::mod_traits::RadioKind;
 use embedded_hal_async::delay::DelayUs;
-use crate::message::MESSAGE_SIZE;
 
 pub const LORA_FREQUENCY_IN_HZ: u32 = 433_220_000;
 const TX_POWER: i32 = 20;
@@ -47,7 +46,7 @@ where
 {
     lora.create_modulation_params(
         SpreadingFactor::_10,
-        Bandwidth::_250KHz,
+        Bandwidth::_125KHz,
         CodingRate::_4_8,
         LORA_FREQUENCY_IN_HZ,
     )
@@ -61,7 +60,7 @@ where
     RK: RadioKind,
     DLY: DelayUs,
 {
-    lora.create_rx_packet_params(4, false, 1 + MESSAGE_SIZE as u8, true, false, mdltn_params)
+    lora.create_rx_packet_params(8, false, 255, true, false, mdltn_params)
 }
 
 fn create_tx_packet<RK, DLY>(
@@ -72,5 +71,5 @@ where
     RK: RadioKind,
     DLY: DelayUs,
 {
-    lora.create_tx_packet_params(4, false, true, false, mdltn_params)
+    lora.create_tx_packet_params(8, false, true, false, mdltn_params)
 }
