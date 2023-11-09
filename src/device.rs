@@ -12,11 +12,13 @@ use heapless::Vec;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
 use lora_phy::LoRa;
-use crate::device::config::device_config::DeviceConfig;
+use crate::device::config::device_config::{DeviceCapabilities, DeviceClass, DeviceConfig};
 
 pub mod config;
 pub mod device_error;
 pub mod stacks;
+
+pub static mut DEVICE_CONFIG: DeviceConfig = DeviceConfig { device_class: DeviceClass::A, device_capabilities: DeviceCapabilities::Lora };
 
 const INSTACK_SIZE: usize = 32;
 const OUTSTACK_SIZE: usize = 32;
@@ -36,7 +38,6 @@ where
 {
     uid: Uid,
     lora_config: LoraConfig,
-    device_config: DeviceConfig,
     radio: LoRa<RK, DLY>,
     state: DeviceState,
     instack: &'static mut IS,
@@ -65,12 +66,14 @@ where
         instack: &'static mut IS,
         outstack: &'static mut OS,
     ) -> Self {
+        unsafe {
+            DEVICE_CONFIG = device_config;
+        }
         Self {
             uid,
             radio,
             state: DeviceState::Idle,
             lora_config,
-            device_config,
             instack,
             outstack,
             routing_table: RoutingTable::default(),

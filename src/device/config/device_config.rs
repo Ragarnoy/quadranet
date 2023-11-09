@@ -6,6 +6,15 @@ pub struct DeviceConfig {
     pub device_capabilities: DeviceCapabilities,
 }
 
+impl Default for DeviceConfig {
+    fn default() -> Self {
+        Self {
+            device_class: DeviceClass::A,
+            device_capabilities: DeviceCapabilities::Lora,
+        }
+    }
+}
+
 impl From<DeviceConfig> for u8 {
     fn from(value: DeviceConfig) -> Self {
         match (value.device_class, value.device_capabilities) { 

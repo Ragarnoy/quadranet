@@ -2,13 +2,12 @@ pub mod content;
 pub mod error;
 pub mod intent;
 
-use crate::device::Uid;
+use crate::device::{DEVICE_CONFIG, Uid};
 use crate::message::error::MessageError;
 use crate::message::intent::Intent;
 use core::convert::TryFrom;
 use core::mem::size_of;
 use core::num::NonZeroU8;
-use crate::device::config::device_config::DeviceConfig;
 
 const INTENT_SIZE: usize = size_of::<u8>(); // Assuming Intent is stored as u8
 const UID_SIZE: usize = size_of::<Uid>();
@@ -106,9 +105,9 @@ impl Message {
 
     // Specialized constructor for Information
     // Placeholder: Requires implementation of information-specific logic
-    pub fn information(sender_uid: Uid, device_config: DeviceConfig) -> Self {
+    pub fn information(sender_uid: Uid) -> Self {
         let mut content = [0u8; 64];
-        content[0] = device_config.into();
+        content[0] = unsafe { DEVICE_CONFIG.into() };
         Self::new(Intent::Information, sender_uid, None, content)
     }
 
