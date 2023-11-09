@@ -1,4 +1,4 @@
-use crate::device::config::LoraConfig;
+use config::lora_config::LoraConfig;
 use crate::device::stacks::MessageStack;
 use crate::message::intent::Intent;
 use crate::message::Message;
@@ -12,6 +12,7 @@ use heapless::Vec;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
 use lora_phy::LoRa;
+use crate::device::config::device_config::DeviceConfig;
 
 pub mod config;
 pub mod device_error;
@@ -34,11 +35,12 @@ where
     OS: MessageStack + 'static,
 {
     uid: Uid,
-    config: LoraConfig,
+    lora_config: LoraConfig,
+    device_config: DeviceConfig,
     radio: LoRa<RK, DLY>,
     state: DeviceState,
-    pub instack: &'static mut IS,
-    pub outstack: &'static mut OS,
+    instack: &'static mut IS,
+    outstack: &'static mut OS,
     routing_table: RoutingTable,
 }
 
@@ -58,7 +60,8 @@ where
     pub fn new(
         uid: Uid,
         radio: LoRa<RK, DLY>,
-        config: LoraConfig,
+        lora_config: LoraConfig,
+        device_config: DeviceConfig,
         instack: &'static mut IS,
         outstack: &'static mut OS,
     ) -> Self {
@@ -66,7 +69,8 @@ where
             uid,
             radio,
             state: DeviceState::Idle,
-            config,
+            lora_config,
+            device_config,
             instack,
             outstack,
             routing_table: RoutingTable::default(),
@@ -87,13 +91,14 @@ where
         if let Some(receiver) = message.receiver_uid {
             if receiver.get() == self.uid.get() {
                 self.instack.push(message).unwrap(); // Handle this unwrap appropriately
-            } else {
-                self.outstack.push(message).unwrap(); // Handle this unwrap appropriately
+            } else if let Some(hop) = message.next_hop {
+                if hop.get() == self.uid.get() {
+                    self.outstack.push(message).unwrap(); // Handle this unwrap appropriately
+                }
             }
         } else {
             self.instack.push(message).unwrap(); // Handle this unwrap appropriately
         }
-
     }
 
     pub async fn process_instack(&mut self) -> Result<(), RadioError> {
@@ -125,8 +130,8 @@ where
                 Some(pong_message)
             }
             Intent::Data => {
-                info!("Received data: {:?}", message);
-                None
+                info!("Received data: {:?}", message.content);
+                Some(Message::ack(self.uid, message.sender_uid, message))
             }
             Intent::Discover => {
                 let depth = message.content[0];
@@ -136,6 +141,10 @@ where
                     None
                 }
             }
+            Intent::Information => {
+                info!("Received information: {:?}", message.content);
+                Some(Message::ack(self.uid, message.sender_uid, message))
+            }
             _ => None,
         }
     }
@@ -144,9 +153,9 @@ where
         // Your existing send_message logic
         self.radio
             .prepare_for_tx(
-                &self.config.modulation,
-                self.config.tx_power,
-                self.config.boosted,
+                &self.lora_config.modulation,
+                self.lora_config.tx_power,
+                self.lora_config.boosted,
             )
             .await?;
 
@@ -169,8 +178,8 @@ where
         info!("Sending message: {:?}", buffer);
         self.radio
             .tx(
-                &self.config.modulation,
-                &mut self.config.tx_pkt_params,
+                &self.lora_config.modulation,
+                &mut self.lora_config.tx_pkt_params,
                 &buffer,
                 0xffffff,
             )
@@ -196,12 +205,12 @@ where
     OS: MessageStack + 'static,
 {
     loop {
-        device.radio.prepare_for_rx(&device.config.modulation, &device.config.rx_pkt_params,
+        device.radio.prepare_for_rx(&device.lora_config.modulation, &device.lora_config.rx_pkt_params,
                                     Some(1), None,
                                     false).await.expect("Failed to prepare for RX");
 
         Timer::after(Duration::from_millis(50)).await;
-        match device.radio.rx(&device.config.rx_pkt_params, buf).await {
+        match device.radio.rx(&device.lora_config.rx_pkt_params, buf).await {
             Ok((size, _status)) => {
                 if let Ok(message) = Message::try_from(&buf[..size as usize]) {
                     info!("Received message: {:?}", message);

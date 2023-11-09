@@ -8,6 +8,7 @@ use crate::message::intent::Intent;
 use core::convert::TryFrom;
 use core::mem::size_of;
 use core::num::NonZeroU8;
+use crate::device::config::device_config::DeviceConfig;
 
 const INTENT_SIZE: usize = size_of::<u8>(); // Assuming Intent is stored as u8
 const UID_SIZE: usize = size_of::<Uid>();
@@ -70,6 +71,18 @@ impl Message {
         self.length
     }
 
+    pub fn ack(sender_uid: Uid, receiver_uid: Uid, message: Message) -> Self {
+        let mut content = [0u8; 64];
+        content[0] = message.intent as u8;
+        content[1] = message.sender_uid.get();
+        content[2] = message.receiver_uid.map_or(0, |uid| uid.get());
+        content[3] = message.next_hop.map_or(0, |uid| uid.get());
+        content[4] = message.length;
+        content[5] = message.ttl;
+        content[6..64].copy_from_slice(&message.content);
+        Self::new(Intent::Ack, sender_uid, Some(receiver_uid), content)
+    }
+
     /// Specialized constructor for Ping
     pub fn ping(sender_uid: Uid) -> Self {
         Self::new(Intent::Ping, sender_uid, None, [0u8; 64])
@@ -93,8 +106,10 @@ impl Message {
 
     // Specialized constructor for Information
     // Placeholder: Requires implementation of information-specific logic
-    pub fn information(sender_uid: Uid) -> Self {
-        Self::new(Intent::Information, sender_uid, None, [0u8; 64])
+    pub fn information(sender_uid: Uid, device_config: DeviceConfig) -> Self {
+        let mut content = [0u8; 64];
+        content[0] = device_config.into();
+        Self::new(Intent::Information, sender_uid, None, content)
     }
 
     // Specialized constructor for Error

@@ -3,7 +3,7 @@ use crate::message::error::MessageError;
 const SIZE: usize = 64;
 
 pub struct Content {
-    content: [u8; SIZE],
+    buffer: [u8; SIZE],
 }
 
 impl Content {
@@ -17,6 +17,6 @@ impl TryFrom<&[u8]> for Content {
         let mut content = [0u8; Self::SIZE];
         content.copy_from_slice(&bytes[1..]);
 
-        Ok(Self { content })
+        Ok(Self { buffer: content })
     }
 }

@@ -9,6 +9,7 @@ pub enum Intent {
     Pong,
     Information,
     Error,
+    Ack,
 }
 
 impl TryFrom<u8> for Intent {
@@ -22,7 +23,9 @@ impl TryFrom<u8> for Intent {
             3 => Ok(Intent::Pong),
             4 => Ok(Intent::Information),
             5 => Ok(Intent::Error),
+            6 => Ok(Intent::Ack),
             _ => Err(MessageError::InvalidIntent),
         }
     }
 }
+
