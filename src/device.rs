@@ -13,6 +13,7 @@ use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
 use lora_phy::LoRa;
 use crate::device::config::device_config::{DeviceCapabilities, DeviceClass, DeviceConfig};
+use crate::message::content::Content;
 
 pub mod config;
 pub mod device_error;
@@ -26,8 +27,8 @@ const MAX_INSTACK_PROCESS: usize = 5;
 const MAX_OUTSTACK_TRANSMIT: usize = 5;
 
 pub type Uid = NonZeroU8;
-pub type InStack = Vec<Message, INSTACK_SIZE>;
-pub type OutStack = Vec<Message, OUTSTACK_SIZE>;
+pub type InStack = Vec<Message<dyn Content>, INSTACK_SIZE>;
+pub type OutStack = Vec<dyn Content, OUTSTACK_SIZE>;
 
 pub struct LoraDevice<RK, DLY, IS, OS>
 where
@@ -84,7 +85,7 @@ where
         self.uid
     }
 
-    pub fn receive_message(&mut self, message: Message) {
+    pub fn receive_message<C: Content>(&mut self, message: Message<C>) {
         let route = Route {
             next_hop: message.sender_uid, // The UID of the node that sent the message
                                           // ... other possible fields like cost, hop_count, etc.
@@ -124,7 +125,7 @@ where
         Ok(())
     }
 
-    pub async fn process_message(&mut self, message: Message) -> Option<Message> {
+    pub async fn process_message<C: Content>(&mut self, message: Message<C>) -> Option<Message<C>> {
         // Your existing logic for processing messages
         match message.intent {
             Intent::Ping => {
@@ -152,7 +153,7 @@ where
         }
     }
 
-    pub async fn send_message(&mut self, mut message: Message) -> Result<(), RadioError> {
+    pub async fn send_message<C: Content>(&mut self, mut message: Message<C>) -> Result<(), RadioError> {
         // Your existing send_message logic
         self.radio
             .prepare_for_tx(

@@ -1,3 +1,4 @@
+use crate::message::content::Content;
 use crate::message::Message;
 
 #[derive(Debug)]
@@ -8,8 +9,8 @@ pub enum StackError {
 }
 
 pub trait MessageStack {
-    fn push(&mut self, message: Message) -> Result<(), StackError>;
-    fn pop(&mut self) -> Result<Message, StackError>;
+    fn push<C: Content>(&mut self, message: Message<C>) -> Result<(), StackError>;
+    fn pop<C: Content>(&mut self) -> Result<Message<C>, StackError>;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
 }
