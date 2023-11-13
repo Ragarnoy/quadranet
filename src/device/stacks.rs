@@ -9,8 +9,11 @@ pub enum StackError {
 }
 
 pub trait MessageStack {
-    fn push<C: Content>(&mut self, message: Message<C>) -> Result<(), StackError>;
-    fn pop<C: Content>(&mut self) -> Result<Message<C>, StackError>;
+    fn push<C: Content>(&mut self, message: Message<C>) -> Result<(), StackError>
+    where
+        [(); C::SIZE]:;
+    fn pop<C: Content>(&mut self) -> Result<Message<C>, StackError>
+    where [(); C::SIZE]:;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
 }

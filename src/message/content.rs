@@ -1,5 +1,5 @@
 pub mod data;
-mod ping;
+pub mod ping;
 
 pub const MAX_CONTENT_SIZE: usize = 64; // Define a maximum content size
 

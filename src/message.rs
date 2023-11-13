@@ -4,11 +4,11 @@ pub mod intent;
 mod test;
 
 use crate::device::Uid;
+use crate::message::content::Content;
 use crate::message::error::MessageError;
 use crate::message::intent::Intent;
 use core::convert::TryFrom;
 use core::mem::size_of;
-use crate::message::content::Content;
 
 const INTENT_SIZE: usize = size_of::<u8>();
 const UID_SIZE: usize = size_of::<Uid>();
@@ -26,7 +26,8 @@ pub const MESSAGE_SIZE: usize = CALCULATED_MESSAGE_SIZE;
 
 #[derive(Debug, Clone)]
 pub struct Message<C: Content>
-where [(); C::SIZE]:,
+where
+    [(); C::SIZE]:,
 {
     pub intent: Intent,
     pub sender_uid: Uid,
@@ -37,10 +38,10 @@ where [(); C::SIZE]:,
 }
 
 impl<C: Content> From<Message<C>> for [u8; MESSAGE_SIZE]
-    where [(); C::SIZE]:,
+where
+    [(); C::SIZE]:,
 {
-    fn from(message: Message<C>) -> Self
-    {
+    fn from(message: Message<C>) -> Self {
         let mut bytes = [0u8; MESSAGE_SIZE];
         bytes[0] = message.intent as u8;
         bytes[1] = message.sender_uid.get();
@@ -54,7 +55,8 @@ impl<C: Content> From<Message<C>> for [u8; MESSAGE_SIZE]
 }
 
 impl<C: Content> TryFrom<&[u8]> for Message<C>
-    where [(); C::SIZE]:,
+where
+    [(); C::SIZE]:,
 {
     type Error = MessageError;
 
@@ -69,7 +71,9 @@ impl<C: Content> TryFrom<&[u8]> for Message<C>
         let next_hop = Uid::new(bytes[3]);
         let ttl = bytes[4];
 
-        let content_array: &[u8; C::SIZE] = bytes[5..5 + C::SIZE].try_into().map_err(|_| MessageError::InvalidContent)?;
+        let content_array: &[u8; C::SIZE] = bytes[5..5 + C::SIZE]
+            .try_into()
+            .map_err(|_| MessageError::InvalidContent)?;
         let content = C::from_bytes(content_array);
 
         Ok(Self {
@@ -83,9 +87,10 @@ impl<C: Content> TryFrom<&[u8]> for Message<C>
     }
 }
 
-
-impl<C: Content> defmt::Format for Message<C>
-where [(); C::SIZE]:,
+impl<C> defmt::Format for Message<C>
+where
+    C: Content + defmt::Format,
+    [(); C::SIZE]:,
 {
     fn format(&self, f: defmt::Formatter<'_>) {
         defmt::write!(f, "Message {{\n");
@@ -95,16 +100,16 @@ where [(); C::SIZE]:,
         defmt::write!(f, "    next_hop: {:?},\n", self.next_hop);
         defmt::write!(f, "    ttl: {:?},\n", self.ttl);
         // Ensure that the content slice is within bounds before printing
-        defmt::write!(f, "    content: {:?},\n", &self.content[0..C::SIZE]);
+        defmt::write!(f, "    content: {:?},\n", &self.content.format(f));
         defmt::write!(f, "}}\n");
     }
 }
 
-
 impl<C: Content> Message<C>
-where [(); C::SIZE]:,
+where
+    [(); C::SIZE]:,
 {
-    fn new(intent: Intent, sender_uid: Uid, receiver_uid: Option<Uid>, content: [u8; 64]) -> Self {
+    fn new(intent: Intent, sender_uid: Uid, receiver_uid: Option<Uid>, content: C) -> Self {
         Self {
             intent,
             sender_uid,
