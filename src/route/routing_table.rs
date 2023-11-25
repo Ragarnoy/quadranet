@@ -1,5 +1,4 @@
 use crate::route::Route;
-use defmt::info;
 use heapless::FnvIndexMap;
 
 pub struct RoutingTable {
@@ -21,9 +20,6 @@ impl RoutingTable {
             let _ = self.routes.remove(&destination);
             // Insert the new entry
             let _ = self.routes.insert(destination, route);
-        }
-        for (destination, route) in self.routes.iter() {
-            info!("{} -> {}", destination, route.next_hop);
         }
     }
 

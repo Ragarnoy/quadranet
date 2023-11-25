@@ -1,122 +1,88 @@
-pub mod content;
 pub mod error;
-pub mod intent;
-mod test;
+pub mod payload;
 
 use crate::device::Uid;
-use crate::message::content::Content;
 use crate::message::error::MessageError;
-use crate::message::intent::Intent;
 use core::convert::TryFrom;
-use core::mem::size_of;
+use payload::Payload;
 
-const INTENT_SIZE: usize = size_of::<u8>();
-const UID_SIZE: usize = size_of::<Uid>();
-const LENGTH_SIZE: usize = size_of::<u8>();
-const TTL_SIZE: usize = size_of::<u8>();
-const CONTENT_SIZE: usize = size_of::<[u8; 64]>();
+const MAX_TTL: u8 = 10;
+const MAX_MESSAGE_SIZE: usize = 70;
 
-// Calculate the total message size
-const CALCULATED_MESSAGE_SIZE: usize =
-    INTENT_SIZE + 3 * UID_SIZE + LENGTH_SIZE + TTL_SIZE + CONTENT_SIZE;
-
-/// Compile-time assertion to check if MESSAGE_SIZE matches the calculated size
-//noinspection RsAssertEqual
-pub const MESSAGE_SIZE: usize = CALCULATED_MESSAGE_SIZE;
-
-#[derive(Debug, Clone)]
-pub struct Message<C: Content>
-where
-    [(); C::SIZE]:,
-{
-    pub intent: Intent,
-    pub sender_uid: Uid,
-    pub receiver_uid: Option<Uid>,
-    pub next_hop: Option<Uid>,
-    pub ttl: u8,
-    pub content: C,
+#[derive(Debug, PartialEq, bitcode::Encode, bitcode::Decode)]
+pub struct Message {
+    /// Source ID is the UID of the node that sent the message
+    source_id: Uid,
+    /// Destination ID is the UID of the node the message is intended for
+    destination_id: Option<Uid>,
+    /// Payload is the data being sent
+    payload: Payload,
+    /// Time to live is the number of hops a message can take before it is considered expired
+    ttl: u8,
 }
 
-impl<C: Content> From<Message<C>> for [u8; MESSAGE_SIZE]
-where
-    [(); C::SIZE]:,
-{
-    fn from(message: Message<C>) -> Self {
-        let mut bytes = [0u8; MESSAGE_SIZE];
-        bytes[0] = message.intent as u8;
-        bytes[1] = message.sender_uid.get();
-        bytes[2] = message.receiver_uid.map_or(0, |uid| uid.get());
-        bytes[3] = message.next_hop.map_or(0, |uid| uid.get());
-        // No need to store length as it's implied by C::SIZE
-        bytes[4] = message.ttl;
-        bytes[5..(5 + C::SIZE)].copy_from_slice(message.content.as_bytes());
-        bytes
+impl Message {
+    pub fn new(source_id: Uid, destination_id: Option<Uid>, payload: Payload, ttl: u8) -> Self {
+        Self {
+            source_id,
+            destination_id,
+            payload,
+            ttl: ttl.min(MAX_TTL),
+        }
+    }
+    pub fn source_id(&self) -> Uid {
+        self.source_id
+    }
+
+    pub fn destination_id(&self) -> Option<Uid> {
+        self.destination_id
+    }
+
+    pub fn payload(&self) -> &Payload {
+        &self.payload
+    }
+
+    pub fn ttl(&self) -> u8 {
+        self.ttl
+    }
+
+    pub fn decrement_ttl(&mut self) {
+        self.ttl = self.ttl.saturating_sub(1);
+    }
+
+    pub fn is_expired(&self) -> bool {
+        self.ttl == 0
+    }
+
+    pub fn is_for_me(&self, uid: Uid) -> bool {
+        self.destination_id == Some(uid)
+    }
+
+    fn serialize(&self) -> [u8; MAX_MESSAGE_SIZE] {
+        // Serialize the message fields to a byte array
+        bitcode::encode(&self).unwrap().as_slice().try_into().unwrap()
+    }
+
+    fn deserialize(data: &[u8]) -> Result<Self, MessageError> {
+        // Deserialize the byte array into a Message
+        if let Ok(message) = bitcode::decode::<Message>(data) {
+            Ok(message)
+        } else {
+            Err(MessageError::InvalidMessage)
+        }
     }
 }
 
-impl<C: Content> TryFrom<&[u8]> for Message<C>
-where
-    [(); C::SIZE]:,
-{
+impl TryFrom<&[u8]> for Message {
     type Error = MessageError;
 
-    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        if bytes.len() != MESSAGE_SIZE {
-            return Err(MessageError::InvalidLength);
-        }
-
-        let intent = Intent::try_from(bytes[0])?;
-        let sender_uid = Uid::new(bytes[1]).unwrap();
-        let receiver_uid = Uid::new(bytes[2]);
-        let next_hop = Uid::new(bytes[3]);
-        let ttl = bytes[4];
-
-        let content_array: &[u8; C::SIZE] = bytes[5..5 + C::SIZE]
-            .try_into()
-            .map_err(|_| MessageError::InvalidContent)?;
-        let content = C::from_bytes(content_array);
-
-        Ok(Self {
-            intent,
-            sender_uid,
-            receiver_uid,
-            next_hop,
-            ttl,
-            content,
-        })
+    fn try_from(data: &[u8]) -> Result<Self, Self::Error> {
+        Self::deserialize(data)
     }
 }
 
-impl<C> defmt::Format for Message<C>
-where
-    C: Content + defmt::Format,
-    [(); C::SIZE]:,
-{
-    fn format(&self, f: defmt::Formatter<'_>) {
-        defmt::write!(f, "Message {{\n");
-        defmt::write!(f, "    intent: {:?},\n", self.intent);
-        defmt::write!(f, "    sender_uid: {:?},\n", self.sender_uid);
-        defmt::write!(f, "    receiver_uid: {:?},\n", self.receiver_uid);
-        defmt::write!(f, "    next_hop: {:?},\n", self.next_hop);
-        defmt::write!(f, "    ttl: {:?},\n", self.ttl);
-        // Ensure that the content slice is within bounds before printing
-        defmt::write!(f, "    content: {:?},\n", &self.content.format(f));
-        defmt::write!(f, "}}\n");
-    }
-}
-
-impl<C: Content> Message<C>
-where
-    [(); C::SIZE]:,
-{
-    fn new(intent: Intent, sender_uid: Uid, receiver_uid: Option<Uid>, content: C) -> Self {
-        Self {
-            intent,
-            sender_uid,
-            receiver_uid,
-            next_hop: None,
-            ttl: 0,
-            content,
-        }
+impl From<Message> for [u8; MAX_MESSAGE_SIZE] {
+    fn from(message: Message) -> Self {
+        message.serialize()
     }
 }

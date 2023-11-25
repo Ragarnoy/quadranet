@@ -1,6 +1,5 @@
 use config::lora_config::LoraConfig;
-use crate::device::stacks::MessageStack;
-use crate::message::intent::Intent;
+use crate::device::collections::MessageStack;
 use crate::message::Message;
 use crate::route::routing_table::RoutingTable;
 use crate::route::Route;
@@ -12,14 +11,14 @@ use heapless::Vec;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
 use lora_phy::LoRa;
-use crate::device::config::device_config::{DeviceCapabilities, DeviceClass, DeviceConfig};
-use crate::message::content::Content;
+use crate::device::config::device_config::DeviceConfig;
+use crate::message::payload::Payload;
 
 pub mod config;
 pub mod device_error;
-pub mod stacks;
+pub mod collections;
 
-pub static mut DEVICE_CONFIG: DeviceConfig = DeviceConfig { device_class: DeviceClass::A, device_capabilities: DeviceCapabilities::Lora };
+pub static mut DEVICE_CONFIG: Option<DeviceConfig> = None;
 
 const INSTACK_SIZE: usize = 32;
 const OUTSTACK_SIZE: usize = 32;
@@ -27,8 +26,8 @@ const MAX_INSTACK_PROCESS: usize = 5;
 const MAX_OUTSTACK_TRANSMIT: usize = 5;
 
 pub type Uid = NonZeroU8;
-pub type InStack = Vec<Message<dyn Content>, INSTACK_SIZE>;
-pub type OutStack = Vec<dyn Content, OUTSTACK_SIZE>;
+pub type InStack = Vec<Message, INSTACK_SIZE>;
+pub type OutStack = Vec<Message, OUTSTACK_SIZE>;
 
 pub struct LoraDevice<RK, DLY, IS, OS>
 where
@@ -68,7 +67,7 @@ where
         outstack: &'static mut OS,
     ) -> Self {
         unsafe {
-            DEVICE_CONFIG = device_config;
+            DEVICE_CONFIG = Some(device_config);
         }
         Self {
             uid,
@@ -85,80 +84,82 @@ where
         self.uid
     }
 
-    pub fn receive_message<C: Content>(&mut self, message: Message<C>)
-    where [(); C::SIZE]:,
+    pub fn receive_message(&mut self, message: Message)
     {
         let route = Route {
-            next_hop: message.sender_uid, // The UID of the node that sent the message
+            next_hop: message.source_id(), // The UID of the node that sent the message
                                           // ... other possible fields like cost, hop_count, etc.
         };
-        self.routing_table.update(message.sender_uid.get(), route);
 
-        if let Some(receiver) = message.receiver_uid {
+        if let Some(receiver) = message.destination_id() {
             if receiver.get() == self.uid.get() {
                 self.instack.push(message).unwrap(); // Handle this unwrap appropriately
-            } else if let Some(hop) = message.next_hop {
-                if hop.get() == self.uid.get() {
-                    self.outstack.push(message).unwrap(); // Handle this unwrap appropriately
-                }
             }
         } else {
             self.instack.push(message).unwrap(); // Handle this unwrap appropriately
         }
     }
 
-    pub async fn process_instack<C: Content>(&mut self) -> Result<(), RadioError>
-    where [(); C::SIZE]:,
+    pub async fn process_instack(&mut self) -> Result<(), RadioError>
     {
         let to_process = core::cmp::min(self.instack.len(), MAX_INSTACK_PROCESS);
         for _ in 0..to_process {
-            let message: Message<C> = self.instack.pop().unwrap(); // Handle this unwrap appropriately
-            if let Some(new_message) = self.process_message(message).await {
-                self.outstack.push(new_message).unwrap(); // Handle this unwrap appropriately
-            }
+            let message: Message = self.instack.pop().unwrap(); // Handle this unwrap appropriately
+            self.process_message(message).await;
         }
         Ok(())
     }
 
-    pub async fn process_outstack<C: Content>(&mut self) -> Result<(), RadioError>
-    where [(); C::SIZE]:,
+    pub async fn process_outstack(&mut self) -> Result<(), RadioError>
     {
         let to_transmit = core::cmp::min(self.outstack.len(), MAX_OUTSTACK_TRANSMIT);
         for _ in 0..to_transmit {
-            let message : Message<C> = self.outstack.pop().unwrap(); // Handle this unwrap appropriately
+            let message : Message = self.outstack.pop().unwrap(); // Handle this unwrap appropriately
             self.send_message(message).await?;
         }
         Ok(())
     }
 
-    pub async fn process_message<C: Content>(&mut self, message: Message<C>) -> Option<Message<C>>
-    where [(); C::SIZE]:,
+    pub async fn process_message(&mut self, message: Message)
     {
         // Your existing logic for processing messages
-        match message.intent {
-            Intent::Ping => {
-                let pong_message = todo!();
-                info!("Pong!");
-                Some(pong_message)
+        match message.payload() {
+            Payload::Data(data) => {
+                info!("Received data: {:?}", data);
             }
-            Intent::Data => {
-                info!("Received data: {:?}", message.content);
-                Some(todo!())
+            Payload::Command(command) => {
+                info!("Received command: {:?}", command);
             }
-            Intent::Discover => {
-                todo!()
+            Payload::Ack(ack) => {
+                info!("Received ack: {:?}", ack);
             }
-            Intent::Information => {
-                info!("Received information: {:?}", message.content);
-                Some(todo!())
-            }
-            _ => None,
         }
     }
 
-    pub async fn send_message<C: Content>(&mut self, mut message: Message<C>) -> Result<(), RadioError>
-        where [(); C::SIZE]:,
+    pub async fn send_message(&mut self, message: Message) -> Result<(), RadioError>
     {
+        self.state = DeviceState::Transmitting;
+        // Your existing send_message logic
+        let tx_message = Message::new(
+            self.uid,
+            message.destination_id(),
+            message.payload().clone(),
+            message.ttl(),
+        );
+        self.outstack.push(tx_message).unwrap(); // Handle this unwrap appropriately
+        self.state = DeviceState::Idle;
+        Ok(())
+    }
+
+    pub async fn discover_nodes(&mut self, depth: u8) -> Result<(), RadioError> {
+        if depth == 0 {
+            return Ok(());
+        }
+        todo!()
+        // self.send_message(message).await
+    }
+
+    async fn tx_message(&mut self, message: Message) -> Result<(), RadioError> {
         // Your existing send_message logic
         self.radio
             .prepare_for_tx(
@@ -168,22 +169,9 @@ where
             )
             .await?;
 
-        if message.next_hop.is_none() && message.receiver_uid.is_some() {
-            if let Some(route) = self
-                .routing_table
-                .lookup_route(message.receiver_uid.unwrap().get())
-            {
-                message.next_hop = Some(route.next_hop);
-            } else {
-                // Handle the case where the route is not found
-                warn!("Route not found");
-            }
-        }
-
         self.state = DeviceState::Transmitting;
-        Timer::after(Duration::from_millis(200)).await;
-        message.sender_uid = self.uid;
         let buffer: [u8; 70] = message.into();
+        Timer::after(Duration::from_millis(200)).await;
         info!("Sending message: {:?}", buffer);
         self.radio
             .tx(
@@ -196,14 +184,6 @@ where
         self.state = DeviceState::Idle;
         Ok(())
     }
-
-    pub async fn discover_nodes(&mut self, depth: u8) -> Result<(), RadioError> {
-        if depth == 0 {
-            return Ok(());
-        }
-        todo!()
-        // self.send_message(message).await
-    }
 }
 
 pub async fn run_device<RK, DLY, IS, OS, C>(mut device: LoraDevice<RK, DLY, IS, OS>, buf: &mut [u8])
@@ -212,8 +192,6 @@ where
     DLY: DelayUs,
     IS: MessageStack + 'static,
     OS: MessageStack + 'static,
-    C: Content,
-    [(); C::SIZE]:,
 {
     loop {
         device.radio.prepare_for_rx(&device.lora_config.modulation, &device.lora_config.rx_pkt_params,
@@ -225,7 +203,7 @@ where
             Ok((size, _status)) => {
                 if let Ok(message) = Message::try_from(&buf[..size as usize]) {
                     info!("Received message: {:?}", message);
-                    device.receive_message::<C>(message);
+                    device.receive_message(message);
                 } else {
                     warn!("Received invalid message");
                 }
