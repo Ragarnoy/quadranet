@@ -24,8 +24,6 @@ impl RoutingTable {
     }
 
     pub fn lookup_route(&self, destination: u8) -> Option<Route> {
-        self.routes.get(&destination).map(|route| Route {
-            next_hop: route.next_hop,
-        })
+        self.routes.get(&destination).copied()
     }
 }

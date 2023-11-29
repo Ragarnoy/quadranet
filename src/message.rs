@@ -9,16 +9,16 @@ use payload::Payload;
 const MAX_TTL: u8 = 10;
 const MAX_MESSAGE_SIZE: usize = 70;
 
-#[derive(Debug, PartialEq, bitcode::Encode, bitcode::Decode)]
+#[derive(Clone, Debug, PartialEq, bitcode::Encode, bitcode::Decode)]
 pub struct Message {
     /// Source ID is the UID of the node that sent the message
     source_id: Uid,
     /// Destination ID is the UID of the node the message is intended for
     destination_id: Option<Uid>,
-    /// Payload is the data being sent
-    payload: Payload,
     /// Time to live is the number of hops a message can take before it is considered expired
     ttl: u8,
+    /// Payload is the data being sent
+    payload: Payload,
 }
 
 impl Message {

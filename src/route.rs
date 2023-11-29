@@ -2,7 +2,8 @@ use crate::device::Uid;
 
 pub mod routing_table;
 
+#[derive(Clone, Copy, Debug, PartialEq, bitcode::Encode, bitcode::Decode)]
 pub struct Route {
-    pub next_hop: Uid, // UID of the next node in the path
-                       // ... other possible fields like cost, hop_count, etc.
+    pub next_hop: Uid,
+    pub hop_count: u8,
 }
