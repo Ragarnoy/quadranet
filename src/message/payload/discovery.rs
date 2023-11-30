@@ -1,6 +1,7 @@
+use serde::{Deserialize, Serialize};
 use crate::device::Uid;
 
-#[derive(Clone, Copy, Debug, PartialEq, bitcode::Encode, bitcode::Decode)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum DiscoveryType {
     Request {
         original_ttl: u8,

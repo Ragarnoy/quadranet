@@ -1,4 +1,5 @@
 use core::mem::size_of;
+use serde::{Deserialize, Serialize};
 use ack::AckType;
 use command::CommandType;
 use data::DataType;
@@ -15,7 +16,7 @@ mod ack;
 /// This constant is the maximum size of the payload in bytes
 pub const MAX_PAYLOAD_SIZE: usize = MAX_MESSAGE_SIZE - size_of::<u8>() - size_of::<u8>() - size_of::<u8>() - size_of::<u8>();
 
-#[derive(Clone, Debug, PartialEq, bitcode::Encode, bitcode::Decode)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Payload {
     Data(DataType),
     Command(CommandType),

@@ -9,9 +9,13 @@ embassy-time = { version = "0.1", features = ["nightly", "unstable-traits"] }
 embedded-hal-async = "1.0.0-rc.1"
 snafu = { version = "0.7.5", default-features = false }
 heapless = "0.8"
-bitcode = "0.5"
+postcard = "1.0"
 defmt = "0.3"
 defmt-rtt = "0.4"
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+
+[dev-dependencies]
+postcard = { version = "1.0", features = ["alloc"] }
 
 [profile.release]
 opt-level = "s"

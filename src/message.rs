@@ -1,15 +1,19 @@
 pub mod error;
 pub mod payload;
 
+#[cfg(test)]
+mod test;
+
 use crate::device::Uid;
 use crate::message::error::MessageError;
 use core::convert::TryFrom;
+use serde::{Deserialize, Serialize};
 use payload::Payload;
 
 const MAX_TTL: u8 = 10;
 const MAX_MESSAGE_SIZE: usize = 70;
 
-#[derive(Clone, Debug, PartialEq, bitcode::Encode, bitcode::Decode)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     /// Source ID is the UID of the node that sent the message
     source_id: Uid,
@@ -55,21 +59,7 @@ impl Message {
     }
 
     pub fn is_for_me(&self, uid: Uid) -> bool {
-        self.destination_id == Some(uid)
-    }
-
-    fn serialize(&self) -> [u8; MAX_MESSAGE_SIZE] {
-        // Serialize the message fields to a byte array
-        bitcode::encode(&self).unwrap().as_slice().try_into().unwrap()
-    }
-
-    fn deserialize(data: &[u8]) -> Result<Self, MessageError> {
-        // Deserialize the byte array into a Message
-        if let Ok(message) = bitcode::decode::<Message>(data) {
-            Ok(message)
-        } else {
-            Err(MessageError::InvalidMessage)
-        }
+        self.destination_id == Some(uid) || self.destination_id.is_none()
     }
 }
 
@@ -77,12 +67,14 @@ impl TryFrom<&[u8]> for Message {
     type Error = MessageError;
 
     fn try_from(data: &[u8]) -> Result<Self, Self::Error> {
-        Self::deserialize(data)
+            postcard::from_bytes(data).map_err(|_| MessageError::DeserializationError)
     }
 }
 
 impl From<Message> for [u8; MAX_MESSAGE_SIZE] {
     fn from(message: Message) -> Self {
-        message.serialize()
+        let mut data = [0; MAX_MESSAGE_SIZE];
+        let _ = postcard::to_slice_cobs(&message, &mut data);
+        data
     }
 }
