@@ -55,6 +55,26 @@ pub enum DeviceState {
     Receiving,
 }
 
+/// Represents a LoRa device in a P2P Mesh Network.
+///
+/// This struct encapsulates the functionality required for a LoRa device
+/// to participate in the mesh network, including message handling,
+/// routing, and network discovery.
+///
+/// # Generic Parameters
+/// - `RK`: The type that defines the kind of radio being used.
+/// - `DLY`: Delay trait for asynchronous operations.
+/// - `IS`: Message queue for incoming messages.
+/// - `OS`: Message queue for outgoing messages.
+///
+/// # Fields
+/// - `uid`: Unique identifier of the device.
+/// - `lora_config`: Configuration settings for the LoRa radio.
+/// - `radio`: The LoRa radio instance.
+/// - `state`: Current state of the device (Idle, Transmitting, Receiving).
+/// - `inqueue`: Queue for incoming messages.
+/// - `outstack`: Queue for outgoing messages.
+/// - `routing_table`: Table for managing routes to other devices.
 impl<RK, DLY, IS, OS> LoraDevice<RK, DLY, IS, OS>
 where
     RK: RadioKind,
