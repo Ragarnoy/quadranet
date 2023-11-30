@@ -186,13 +186,13 @@ where
         // Your existing logic for processing messages
         match message.payload() {
             Payload::Data(data) => {
-                info!("Received data: {:?}", data);
+                info!("Received data: {:?}", defmt::Debug2Format(data));
             }
             Payload::Command(command) => {
-                info!("Received command: {:?}", command);
+                info!("Received command: {:?}", defmt::Debug2Format(command));
             }
             Payload::Ack(ack) => {
-                info!("Received ack: {:?}", ack);
+                info!("Received ack: {:?}", defmt::Debug2Format(ack));
             }
             Payload::Route(route) => match route {
                 RouteType::Request => {}

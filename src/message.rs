@@ -7,13 +7,14 @@ mod test;
 use crate::device::Uid;
 use crate::message::error::MessageError;
 use core::convert::TryFrom;
+use defmt::Format;
 use serde::{Deserialize, Serialize};
 use payload::Payload;
 
 const MAX_TTL: u8 = 10;
 const MAX_MESSAGE_SIZE: usize = 70;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Format)]
 pub struct Message {
     /// Source ID is the UID of the node that sent the message
     source_id: Uid,

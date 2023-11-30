@@ -1,7 +1,8 @@
+use defmt::Format;
 use serde::{Deserialize, Serialize};
 use crate::message::payload::MAX_PAYLOAD_SIZE;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Format)]
 pub enum DataType {
     Text(Text),
     Binary(Binary),
@@ -22,7 +23,7 @@ impl DataType {
 }
 
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Format)]
 pub struct Text([u8; MAX_PAYLOAD_SIZE]);
 
 impl Serialize for Text {
@@ -46,7 +47,7 @@ impl<'de> Deserialize<'de> for Text {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Format)]
 pub struct Binary([u8; MAX_PAYLOAD_SIZE]);
 
 impl Serialize for Binary {
