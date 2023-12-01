@@ -1,8 +1,13 @@
-use crate::device::collections::{MessageQueue};
+use crate::device::collections::MessageQueue;
 use crate::device::config::device_config::DeviceConfig;
+use crate::device::device_error::DeviceError;
+use crate::message::payload::discovery::DiscoveryType;
+use crate::message::payload::route::RouteType;
 use crate::message::payload::Payload;
+use crate::message::payload::Payload::Discovery;
 use crate::message::Message;
 use crate::route::routing_table::RoutingTable;
+use crate::route::Route;
 use config::lora_config::LoraConfig;
 use core::num::NonZeroU8;
 use defmt::{error, info, warn};
@@ -12,11 +17,6 @@ use heapless::Vec;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
 use lora_phy::LoRa;
-use crate::device::device_error::DeviceError;
-use crate::message::payload::discovery::DiscoveryType;
-use crate::message::payload::Payload::Discovery;
-use crate::message::payload::route::RouteType;
-use crate::route::Route;
 
 pub mod collections;
 pub mod config;
@@ -114,8 +114,7 @@ where
                 if let Err(e) = self.inqueue.enqueue(message) {
                     error!("Error enqueueing message: {:?}", e);
                 }
-            }
-            else if !message.is_expired() {
+            } else if !message.is_expired() {
                 if let Err(e) = self.route_message(message).await {
                     error!("Error routing message: {:?}", e);
                 }
@@ -139,17 +138,22 @@ where
             message.payload().clone(),
             message.ttl(),
         );
-        if let Discovery(DiscoveryType::Response { hops: _hops, last_hop }) = *message.payload() {
-            let payload = Discovery(DiscoveryType::Response { hops: 0, last_hop: self.uid });
-            message = Message::new(
-                self.uid,
-                Some(last_hop),
-                payload,
-                message.ttl(),
-            );
+        if let Discovery(DiscoveryType::Response {
+            hops: _hops,
+            last_hop,
+        }) = *message.payload()
+        {
+            let payload = Discovery(DiscoveryType::Response {
+                hops: 0,
+                last_hop: self.uid,
+            });
+            message = Message::new(self.uid, Some(last_hop), payload, message.ttl());
         }
 
-        if let Some(route) = self.routing_table.lookup_route(message.destination_id().unwrap().get()) {
+        if let Some(route) = self
+            .routing_table
+            .lookup_route(message.destination_id().unwrap().get())
+        {
             message = Message::new(
                 self.uid,
                 Some(route.next_hop),
@@ -202,20 +206,28 @@ where
             Discovery(discovery) => match discovery {
                 DiscoveryType::Request { original_ttl } => {
                     let hops = original_ttl - message.ttl();
-                    let res = self.outstack
-                        .enqueue(Message::new(
-                            self.uid,
-                            Some(message.source_id()),
-                            Discovery(DiscoveryType::Response { hops, last_hop: self.uid }),
-                            *original_ttl,
-                        ));
+                    let res = self.outstack.enqueue(Message::new(
+                        self.uid,
+                        Some(message.source_id()),
+                        Discovery(DiscoveryType::Response {
+                            hops,
+                            last_hop: self.uid,
+                        }),
+                        *original_ttl,
+                    ));
 
                     if let Err(e) = res {
                         error!("Error enqueueing discovery message: {:?}", e);
                     }
                 }
                 DiscoveryType::Response { hops, last_hop } => {
-                    self.routing_table.update(message.source_id().get(), Route { next_hop: *last_hop, hop_count: *hops });
+                    self.routing_table.update(
+                        message.source_id().get(),
+                        Route {
+                            next_hop: *last_hop,
+                            hop_count: *hops,
+                        },
+                    );
                 }
             },
         }
@@ -236,13 +248,12 @@ where
     }
 
     pub async fn discover_nodes(&mut self) {
-        let res = self.outstack
-            .enqueue(Message::new(
-                self.uid,
-                None,
-                Discovery(DiscoveryType::Request { original_ttl: 5 }),
-                1,
-            ));
+        let res = self.outstack.enqueue(Message::new(
+            self.uid,
+            None,
+            Discovery(DiscoveryType::Request { original_ttl: 5 }),
+            1,
+        ));
 
         if let Err(e) = res {
             error!("Error enqueueing discovery message: {:?}", e);

@@ -17,7 +17,7 @@ impl Default for DeviceConfig {
 
 impl From<DeviceConfig> for u8 {
     fn from(value: DeviceConfig) -> Self {
-        match (value.device_class, value.device_capabilities) { 
+        match (value.device_class, value.device_capabilities) {
             (DeviceClass::A, DeviceCapabilities::Lora) => 0,
             (DeviceClass::A, DeviceCapabilities::LoraBle) => 1,
             (DeviceClass::A, DeviceCapabilities::LoraWifi) => 2,

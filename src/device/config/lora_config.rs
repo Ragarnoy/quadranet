@@ -1,7 +1,9 @@
-use lora_phy::mod_params::{Bandwidth, CodingRate, ModulationParams, PacketParams, RadioError, SpreadingFactor};
-use lora_phy::LoRa;
-use lora_phy::mod_traits::RadioKind;
 use embedded_hal_async::delay::DelayUs;
+use lora_phy::mod_params::{
+    Bandwidth, CodingRate, ModulationParams, PacketParams, RadioError, SpreadingFactor,
+};
+use lora_phy::mod_traits::RadioKind;
+use lora_phy::LoRa;
 
 pub const LORA_FREQUENCY_IN_HZ: u32 = 433_220_000;
 const TX_POWER: i32 = 20;
@@ -37,7 +39,6 @@ impl LoraConfig {
         }
     }
 }
-
 
 fn modulation_params<RK, DLY>(lora: &mut LoRa<RK, DLY>) -> Result<ModulationParams, RadioError>
 where
