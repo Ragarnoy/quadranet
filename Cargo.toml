@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-lora-phy = "2.1"
-embassy-time = { version = "0.1", features = ["nightly", "unstable-traits"] }
-embedded-hal-async = "1.0.0-rc.1"
+lora-phy = { git = "https://github.com/lora-rs/lora-rs", rev = "a7d44e1477a6e7641e124d6e0a2fc061ec557c1d" }
+embassy-time = { version = "0.1.5", features = ["defmt", "defmt-timestamp-uptime"] }
+embedded-hal-async = "1.0.0-rc.2"
 snafu = { version = "0.7.5", default-features = false }
 heapless = "0.8"
 postcard = "1.0"

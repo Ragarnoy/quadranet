@@ -1,4 +1,4 @@
-use embedded_hal_async::delay::DelayUs;
+use embedded_hal_async::delay::DelayNs;
 use lora_phy::mod_params::{
     Bandwidth, CodingRate, ModulationParams, PacketParams, RadioError, SpreadingFactor,
 };
@@ -20,7 +20,7 @@ impl LoraConfig {
     pub fn new<RK, DLY>(lora: &mut LoRa<RK, DLY>) -> Self
     where
         RK: RadioKind,
-        DLY: DelayUs,
+        DLY: DelayNs,
     {
         let modulation = modulation_params(lora).expect("Failed to create modulation params");
 
@@ -43,7 +43,7 @@ impl LoraConfig {
 fn modulation_params<RK, DLY>(lora: &mut LoRa<RK, DLY>) -> Result<ModulationParams, RadioError>
 where
     RK: RadioKind,
-    DLY: DelayUs,
+    DLY: DelayNs,
 {
     lora.create_modulation_params(
         SpreadingFactor::_10,
@@ -59,7 +59,7 @@ fn create_rx_packet<RK, DLY>(
 ) -> Result<PacketParams, RadioError>
 where
     RK: RadioKind,
-    DLY: DelayUs,
+    DLY: DelayNs,
 {
     lora.create_rx_packet_params(8, false, 255, true, false, mdltn_params)
 }
@@ -70,7 +70,7 @@ fn create_tx_packet<RK, DLY>(
 ) -> Result<PacketParams, RadioError>
 where
     RK: RadioKind,
-    DLY: DelayUs,
+    DLY: DelayNs,
 {
     lora.create_tx_packet_params(8, false, true, false, mdltn_params)
 }

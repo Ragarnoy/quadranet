@@ -12,7 +12,7 @@ use config::lora_config::LoraConfig;
 use core::num::NonZeroU8;
 use defmt::{error, info, warn};
 use embassy_time::{Duration, Timer};
-use embedded_hal_async::delay::DelayUs;
+use embedded_hal_async::delay::DelayNs;
 use heapless::Vec;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
@@ -36,7 +36,7 @@ pub type OutStack = Vec<Message, OUTSTACK_SIZE>;
 pub struct LoraDevice<RK, DLY, IS, OS>
 where
     RK: RadioKind,
-    DLY: DelayUs,
+    DLY: DelayNs,
     IS: MessageQueue + 'static,
     OS: MessageQueue + 'static,
 {
@@ -78,7 +78,7 @@ pub enum DeviceState {
 impl<RK, DLY, IS, OS> LoraDevice<RK, DLY, IS, OS>
 where
     RK: RadioKind,
-    DLY: DelayUs,
+    DLY: DelayNs,
     IS: MessageQueue + 'static,
     OS: MessageQueue + 'static,
 {
@@ -287,11 +287,6 @@ where
     }
 
     async fn try_wait_message(&mut self, buf: &mut [u8])
-    where
-        RK: RadioKind,
-        DLY: DelayUs,
-        IS: MessageQueue + 'static,
-        OS: MessageQueue + 'static,
     {
         self.radio
             .prepare_for_rx(
@@ -324,10 +319,10 @@ where
     }
 }
 
-pub async fn run_device<RK, DLY, IS, OS, C>(mut device: LoraDevice<RK, DLY, IS, OS>, buf: &mut [u8])
+pub async fn run_quadranet<RK, DLY, IS, OS, C>(mut device: LoraDevice<RK, DLY, IS, OS>, buf: &mut [u8])
 where
     RK: RadioKind,
-    DLY: DelayUs,
+    DLY: DelayNs,
     IS: MessageQueue + 'static,
     OS: MessageQueue + 'static,
 {
