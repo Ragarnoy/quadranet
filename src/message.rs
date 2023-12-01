@@ -64,11 +64,11 @@ impl Message {
     }
 }
 
-impl TryFrom<&[u8]> for Message {
+impl TryFrom<&mut [u8]> for Message {
     type Error = MessageError;
 
-    fn try_from(data: &[u8]) -> Result<Self, Self::Error> {
-            postcard::from_bytes(data).map_err(|_| MessageError::DeserializationError)
+    fn try_from(data: &mut [u8]) -> Result<Self, Self::Error> {
+        postcard::from_bytes_cobs(data).map_err(|_| MessageError::DeserializationError)
     }
 }
 

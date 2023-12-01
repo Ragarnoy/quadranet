@@ -296,7 +296,7 @@ where
         Timer::after(Duration::from_millis(50)).await;
         match self.radio.rx(&self.lora_config.rx_pkt_params, buf).await {
             Ok((size, _status)) => {
-                if let Ok(message) = Message::try_from(&buf[..size as usize]) {
+                if let Ok(message) = Message::try_from(&mut buf[..size as usize]) {
                     info!("Received message: {:?}", message);
                     self.enqueue_message(message).await;
                 } else {
