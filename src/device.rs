@@ -33,19 +33,19 @@ pub type Uid = NonZeroU8;
 pub type InStack = Vec<Message, INSTACK_SIZE>;
 pub type OutStack = Vec<Message, OUTSTACK_SIZE>;
 
-pub struct LoraDevice<RK, DLY, IS, OS>
+pub struct LoraDevice<RK, DLY, IN, OUT>
 where
     RK: RadioKind,
     DLY: DelayNs,
-    IS: MessageQueue + 'static,
-    OS: MessageQueue + 'static,
+    IN: MessageQueue + 'static,
+    OUT: MessageQueue + 'static,
 {
     uid: Uid,
     lora_config: LoraConfig,
     radio: LoRa<RK, DLY>,
     state: DeviceState,
-    inqueue: &'static mut IS,
-    outstack: &'static mut OS,
+    inqueue: &'static mut IN,
+    outstack: &'static mut OUT,
     routing_table: RoutingTable,
 }
 
@@ -64,8 +64,8 @@ pub enum DeviceState {
 /// # Generic Parameters
 /// - `RK`: The type that defines the kind of radio being used.
 /// - `DLY`: Delay trait for asynchronous operations.
-/// - `IS`: Message queue for incoming messages.
-/// - `OS`: Message queue for outgoing messages.
+/// - `IN`: Message queue for incoming messages.
+/// - `OUT`: Message queue for outgoing messages.
 ///
 /// # Fields
 /// - `uid`: Unique identifier of the device.
@@ -75,20 +75,20 @@ pub enum DeviceState {
 /// - `inqueue`: Queue for incoming messages.
 /// - `outstack`: Queue for outgoing messages.
 /// - `routing_table`: Table for managing routes to other devices.
-impl<RK, DLY, IS, OS> LoraDevice<RK, DLY, IS, OS>
+impl<RK, DLY, IN, OUT> LoraDevice<RK, DLY, IN, OUT>
 where
     RK: RadioKind,
     DLY: DelayNs,
-    IS: MessageQueue + 'static,
-    OS: MessageQueue + 'static,
+    IN: MessageQueue + 'static,
+    OUT: MessageQueue + 'static,
 {
     pub fn new(
         uid: Uid,
         radio: LoRa<RK, DLY>,
         lora_config: LoraConfig,
         device_config: DeviceConfig,
-        instack: &'static mut IS,
-        outstack: &'static mut OS,
+        instack: &'static mut IN,
+        outstack: &'static mut OUT,
     ) -> Self {
         unsafe {
             DEVICE_CONFIG = Some(device_config);
@@ -319,12 +319,12 @@ where
     }
 }
 
-pub async fn run_quadranet<RK, DLY, IS, OS, C>(mut device: LoraDevice<RK, DLY, IS, OS>, buf: &mut [u8])
+pub async fn run_quadranet<RK, DLY, IN, OUT>(mut device: LoraDevice<RK, DLY, IN, OUT>, buf: &mut [u8])
 where
     RK: RadioKind,
     DLY: DelayNs,
-    IS: MessageQueue + 'static,
-    OS: MessageQueue + 'static,
+    IN: MessageQueue + 'static,
+    OUT: MessageQueue + 'static,
 {
     device.discover_nodes().await;
     loop {
