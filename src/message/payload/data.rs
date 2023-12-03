@@ -11,13 +11,13 @@ pub enum DataType {
 impl DataType {
     pub fn new_text(text: &str) -> Self {
         let mut data = [0; MAX_PAYLOAD_SIZE];
-        data[..text.len()].copy_from_slice(text.as_bytes());
+        data[..MAX_PAYLOAD_SIZE].copy_from_slice(text.as_bytes());
         DataType::Text(Text(data))
     }
 
     pub fn new_binary(bytes: &[u8]) -> Self {
         let mut data = [0; MAX_PAYLOAD_SIZE];
-        data[..bytes.len()].copy_from_slice(bytes);
+        data[..MAX_PAYLOAD_SIZE].copy_from_slice(bytes);
         DataType::Binary(Binary(data))
     }
 }
