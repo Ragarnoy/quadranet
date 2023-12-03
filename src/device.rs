@@ -24,14 +24,16 @@ pub mod device_error;
 
 pub static mut DEVICE_CONFIG: Option<DeviceConfig> = None;
 
-const INSTACK_SIZE: usize = 32;
-const OUTSTACK_SIZE: usize = 32;
-const MAX_INSTACK_PROCESS: usize = 5;
-const MAX_OUTSTACK_TRANSMIT: usize = 5;
+static mut DEVICE_STATE: DeviceState = DeviceState::Idle;
+
+const INQUEUE_SIZE: usize = 32;
+const OUTQUEUE_SIZE: usize = 32;
+const MAX_INQUEUE_PROCESS: usize = 5;
+const MAX_OUTQUEUE_TRANSMIT: usize = 5;
 
 pub type Uid = NonZeroU8;
-pub type InStack = Vec<Message, INSTACK_SIZE>;
-pub type OutStack = Vec<Message, OUTSTACK_SIZE>;
+pub type InQueue = Vec<Message, INQUEUE_SIZE>;
+pub type OutQueue = Vec<Message, OUTQUEUE_SIZE>;
 
 pub struct LoraDevice<RK, DLY, IN, OUT>
 where
@@ -45,10 +47,11 @@ where
     radio: LoRa<RK, DLY>,
     state: DeviceState,
     inqueue: &'static mut IN,
-    outstack: &'static mut OUT,
+    outqueue: &'static mut OUT,
     routing_table: RoutingTable,
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum DeviceState {
     Idle,
     Transmitting,
@@ -73,7 +76,7 @@ pub enum DeviceState {
 /// - `radio`: The LoRa radio instance.
 /// - `state`: Current state of the device (Idle, Transmitting, Receiving).
 /// - `inqueue`: Queue for incoming messages.
-/// - `outstack`: Queue for outgoing messages.
+/// - `outqueue`: Queue for outgoing messages.
 /// - `routing_table`: Table for managing routes to other devices.
 impl<RK, DLY, IN, OUT> LoraDevice<RK, DLY, IN, OUT>
 where
@@ -87,8 +90,8 @@ where
         radio: LoRa<RK, DLY>,
         lora_config: LoraConfig,
         device_config: DeviceConfig,
-        instack: &'static mut IN,
-        outstack: &'static mut OUT,
+        inqueue: &'static mut IN,
+        outqueue: &'static mut OUT,
     ) -> Self {
         unsafe {
             DEVICE_CONFIG = Some(device_config);
@@ -98,14 +101,20 @@ where
             radio,
             state: DeviceState::Idle,
             lora_config,
-            inqueue: instack,
-            outstack,
+            inqueue,
+            outqueue,
             routing_table: RoutingTable::default(),
         }
     }
 
     pub fn uid(&self) -> Uid {
         self.uid
+    }
+
+    pub fn update_state(&self) {
+        unsafe {
+            DEVICE_STATE = self.state;
+        }
     }
 
     pub async fn enqueue_message(&mut self, message: Message) {
@@ -169,7 +178,7 @@ where
     }
 
     pub async fn process_inqueue(&mut self) -> Result<(), RadioError> {
-        let to_process = core::cmp::min(self.inqueue.len(), MAX_INSTACK_PROCESS);
+        let to_process = core::cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
         for _ in 0..to_process {
             let message: Message = self.inqueue.dequeue().unwrap(); // Handle this unwrap appropriately
             self.process_message(message).await;
@@ -178,9 +187,9 @@ where
     }
 
     pub async fn process_outqueue(&mut self) -> Result<(), RadioError> {
-        let to_transmit = core::cmp::min(self.outstack.len(), MAX_OUTSTACK_TRANSMIT);
+        let to_transmit = core::cmp::min(self.outqueue.len(), MAX_OUTQUEUE_TRANSMIT);
         for _ in 0..to_transmit {
-            let message: Message = self.outstack.dequeue().unwrap(); // Handle this unwrap appropriately
+            let message: Message = self.outqueue.dequeue().unwrap(); // Handle this unwrap appropriately
             self.send_message(message).await?;
         }
         Ok(())
@@ -206,7 +215,7 @@ where
             Discovery(discovery) => match discovery {
                 DiscoveryType::Request { original_ttl } => {
                     let hops = original_ttl - message.ttl();
-                    let res = self.outstack.enqueue(Message::new(
+                    let res = self.outqueue.enqueue(Message::new(
                         self.uid,
                         Some(message.source_id()),
                         Discovery(DiscoveryType::Response {
@@ -234,7 +243,6 @@ where
     }
 
     async fn send_message(&mut self, message: Message) -> Result<(), RadioError> {
-        self.state = DeviceState::Transmitting;
         // Your existing send_message logic
         let tx_message = Message::new(
             self.uid,
@@ -242,13 +250,12 @@ where
             message.payload().clone(),
             message.ttl(),
         );
-        self.outstack.enqueue(tx_message).unwrap(); // Handle this unwrap appropriately
-        self.state = DeviceState::Idle;
+        self.outqueue.enqueue(tx_message).unwrap(); // Handle this unwrap appropriately
         Ok(())
     }
 
     pub async fn discover_nodes(&mut self) {
-        let res = self.outstack.enqueue(Message::new(
+        let res = self.outqueue.enqueue(Message::new(
             self.uid,
             None,
             Discovery(DiscoveryType::Request { original_ttl: 5 }),
@@ -286,8 +293,8 @@ where
         Ok(())
     }
 
-    async fn try_wait_message(&mut self, buf: &mut [u8])
-    {
+    async fn try_wait_message(&mut self, buf: &mut [u8]) {
+        self.state = DeviceState::Receiving;
         self.radio
             .prepare_for_rx(
                 &self.lora_config.modulation,
@@ -316,11 +323,14 @@ where
                 error!("Error receiving message: {:?}", e);
             }
         }
+        self.state = DeviceState::Idle;
     }
 }
 
-pub async fn run_quadranet<RK, DLY, IN, OUT>(mut device: LoraDevice<RK, DLY, IN, OUT>, buf: &mut [u8])
-where
+pub async fn run_quadranet<RK, DLY, IN, OUT>(
+    mut device: LoraDevice<RK, DLY, IN, OUT>,
+    buf: &mut [u8],
+) where
     RK: RadioKind,
     DLY: DelayNs,
     IN: MessageQueue + 'static,
@@ -331,21 +341,25 @@ where
         // Wait for a message
         device.try_wait_message(buf).await;
 
-        // Process InStack
+        // Process InQueue
         if !device.inqueue.is_empty() {
             if let Err(e) = device.process_inqueue().await {
-                error!("Error processing instack: {:?}", e);
+                error!("Error processing inqueue: {:?}", e);
             }
         }
 
-        // Process OutStack
-        if !device.outstack.is_empty() {
+        // Process OutQueue
+        if !device.outqueue.is_empty() {
             if let Err(e) = device.process_outqueue().await {
-                error!("Error processing outstack: {:?}", e);
+                error!("Error processing outqueue: {:?}", e);
             }
         }
 
         // Add a delay or yield the task to prevent it from hogging the CPU
         Timer::after(Duration::from_millis(10)).await;
     }
+}
+
+pub fn device_state() -> DeviceState {
+    unsafe { DEVICE_STATE }
 }
