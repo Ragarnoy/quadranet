@@ -188,9 +188,10 @@ where
     }
 
     pub async fn process_outqueue(&mut self) -> Result<(), RadioError> {
+        info!("Processing outqueue");
         let to_transmit = cmp::min(self.outqueue.len(), MAX_OUTQUEUE_TRANSMIT);
         for _ in 0..to_transmit {
-            let message: Message = self.outqueue.dequeue().unwrap(); // Handle this unwrap appropriately
+            let message: Message = self.outqueue.dequeue().expect("Outqueue is empty");
             self.send_message(message).await?;
         }
         Ok(())
@@ -337,9 +338,7 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
     IN: MessageQueue + 'static,
     OUT: MessageQueue + 'static,
 {
-    info!("Starting QuadraNet");
     device.discover_nodes().await;
-    info!("Starting QuadraNet");
     loop {
         // Wait for a message
         device.try_wait_message(buf).await;
