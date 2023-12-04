@@ -11,7 +11,7 @@ use crate::route::routing_table::RoutingTable;
 use crate::route::Route;
 use config::lora_config::LoraConfig;
 use core::num::NonZeroU8;
-use defmt::{debug, error, info, warn};
+use defmt::{error, info, warn};
 use embassy_time::{Duration, Timer};
 use embedded_hal_async::delay::DelayNs;
 use heapless::Vec;
