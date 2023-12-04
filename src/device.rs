@@ -345,7 +345,6 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
     loop {
         // Wait for a message
         device.try_wait_message(buf).await;
-        info!("Device state: {:?}", device.state);
 
         // Process InQueue
         if !device.inqueue.is_empty() {
