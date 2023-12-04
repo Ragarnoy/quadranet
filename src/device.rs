@@ -1,3 +1,4 @@
+use core::cmp;
 use crate::device::collections::MessageQueue;
 use crate::device::config::device_config::DeviceConfig;
 use crate::device::device_error::DeviceError;
@@ -187,7 +188,7 @@ where
     }
 
     pub async fn process_outqueue(&mut self) -> Result<(), RadioError> {
-        let to_transmit = core::cmp::min(self.outqueue.len(), MAX_OUTQUEUE_TRANSMIT);
+        let to_transmit = cmp::min(self.outqueue.len(), MAX_OUTQUEUE_TRANSMIT);
         for _ in 0..to_transmit {
             let message: Message = self.outqueue.dequeue().unwrap(); // Handle this unwrap appropriately
             self.send_message(message).await?;
