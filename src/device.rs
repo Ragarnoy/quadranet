@@ -179,7 +179,6 @@ where
     }
 
     pub async fn process_inqueue(&mut self) -> Result<(), RadioError> {
-        info!("Processing inqueue");
         let to_process = cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
         for _ in 0..to_process {
             let message: Message = self.inqueue.dequeue().unwrap(); // Handle this unwrap appropriately
@@ -189,7 +188,6 @@ where
     }
 
     pub async fn process_outqueue(&mut self) -> Result<(), RadioError> {
-        info!("Processing outqueue");
         let to_transmit = cmp::min(self.outqueue.len(), MAX_OUTQUEUE_TRANSMIT);
         for _ in 0..to_transmit {
             let message: Message = self.outqueue.dequeue().expect("Outqueue is empty");
@@ -309,7 +307,6 @@ where
             .await
             .expect("Failed to prepare for RX");
 
-        info!("Waiting for message");
         Timer::after(Duration::from_millis(50)).await;
         match self.radio.rx(&self.lora_config.rx_pkt_params, buf).await {
             Ok((size, _status)) => {
@@ -327,7 +324,6 @@ where
                 error!("Error receiving message: {:?}", e);
             }
         }
-        info!("Finished waiting for message");
         self.state = DeviceState::Idle;
     }
 }
