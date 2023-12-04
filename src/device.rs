@@ -253,7 +253,7 @@ where
             message.payload().clone(),
             message.ttl(),
         );
-        self.outqueue.enqueue(tx_message).unwrap(); // Handle this unwrap appropriately
+        self.tx_message(tx_message).await?;
         Ok(())
     }
 
