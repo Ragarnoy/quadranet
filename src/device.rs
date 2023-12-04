@@ -129,12 +129,8 @@ where
                     error!("Error routing message: {:?}", e);
                 }
             }
-        } else {
-            if !message.is_expired() {
-                if let Err(e) = self.route_message(message.clone()).await {
-                    error!("Error routing message: {:?}", e);
-                }
-            }
+        } else if !message.is_expired() {
+            self.outqueue.enqueue(message.clone()).unwrap();
             if let Err(e) = self.inqueue.enqueue(message) {
                 error!("Error enqueueing message: {:?}", e);
             }
