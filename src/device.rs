@@ -337,9 +337,9 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
     IN: MessageQueue + 'static,
     OUT: MessageQueue + 'static,
 {
-    debug!("Starting QuadraNet");
+    info!("Starting QuadraNet");
     device.discover_nodes().await;
-    debug!("Starting QuadraNet");
+    info!("Starting QuadraNet");
     loop {
         // Wait for a message
         device.try_wait_message(buf).await;
