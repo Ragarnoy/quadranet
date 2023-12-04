@@ -11,7 +11,7 @@ use crate::route::routing_table::RoutingTable;
 use crate::route::Route;
 use config::lora_config::LoraConfig;
 use core::num::NonZeroU8;
-use defmt::{error, info, warn};
+use defmt::{debug, error, info, warn};
 use embassy_time::{Duration, Timer};
 use embedded_hal_async::delay::DelayNs;
 use heapless::Vec;
@@ -179,7 +179,7 @@ where
     }
 
     pub async fn process_inqueue(&mut self) -> Result<(), RadioError> {
-        let to_process = core::cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
+        let to_process = cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
         for _ in 0..to_process {
             let message: Message = self.inqueue.dequeue().unwrap(); // Handle this unwrap appropriately
             self.process_message(message).await;
@@ -337,7 +337,9 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
     IN: MessageQueue + 'static,
     OUT: MessageQueue + 'static,
 {
+    debug!("Starting QuadraNet");
     device.discover_nodes().await;
+    debug!("Starting QuadraNet");
     loop {
         // Wait for a message
         device.try_wait_message(buf).await;
