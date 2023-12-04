@@ -179,6 +179,7 @@ where
     }
 
     pub async fn process_inqueue(&mut self) -> Result<(), RadioError> {
+        info!("Processing inqueue");
         let to_process = cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
         for _ in 0..to_process {
             let message: Message = self.inqueue.dequeue().unwrap(); // Handle this unwrap appropriately
@@ -308,6 +309,7 @@ where
             .await
             .expect("Failed to prepare for RX");
 
+        info!("Waiting for message");
         Timer::after(Duration::from_millis(50)).await;
         match self.radio.rx(&self.lora_config.rx_pkt_params, buf).await {
             Ok((size, _status)) => {
@@ -325,6 +327,7 @@ where
                 error!("Error receiving message: {:?}", e);
             }
         }
+        info!("Finished waiting for message");
         self.state = DeviceState::Idle;
     }
 }
@@ -342,6 +345,7 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
     loop {
         // Wait for a message
         device.try_wait_message(buf).await;
+        info!("Device state: {:?}", device.state);
 
         // Process InQueue
         if !device.inqueue.is_empty() {
