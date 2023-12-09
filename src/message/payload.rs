@@ -1,12 +1,15 @@
-use crate::message::MAX_MESSAGE_SIZE;
+use core::mem::size_of;
+
+use defmt::Format;
+use serde::{Deserialize, Serialize};
+
 use ack::AckType;
 use command::CommandType;
-use core::mem::size_of;
 use data::DataType;
-use defmt::Format;
 use discovery::DiscoveryType;
 use route::RouteType;
-use serde::{Deserialize, Serialize};
+
+use crate::message::MAX_MESSAGE_SIZE;
 
 mod ack;
 pub mod command;

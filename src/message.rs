@@ -1,15 +1,18 @@
+use core::convert::TryFrom;
+
+use defmt::Format;
+use serde::{Deserialize, Serialize};
+
+use payload::Payload;
+
+use crate::device::Uid;
+use crate::message::error::MessageError;
+
 pub mod error;
 pub mod payload;
 
 #[cfg(test)]
 mod test;
-
-use crate::device::Uid;
-use crate::message::error::MessageError;
-use core::convert::TryFrom;
-use defmt::Format;
-use payload::Payload;
-use serde::{Deserialize, Serialize};
 
 const MAX_TTL: u8 = 10;
 const MAX_MESSAGE_SIZE: usize = 70;

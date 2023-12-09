@@ -1,6 +1,7 @@
-use crate::device::Uid;
 use defmt::Format;
 use serde::{Deserialize, Serialize};
+
+use crate::device::Uid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Format)]
 pub enum DiscoveryType {

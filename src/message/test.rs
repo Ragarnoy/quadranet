@@ -1,9 +1,11 @@
+use core::convert::TryFrom;
+
+use postcard::from_bytes;
+
 use crate::device::Uid;
+use crate::message::Message;
 use crate::message::payload::data::DataType;
 use crate::message::payload::Payload;
-use crate::message::Message;
-use core::convert::TryFrom;
-use postcard::from_bytes;
 
 #[test]
 fn test_message() {

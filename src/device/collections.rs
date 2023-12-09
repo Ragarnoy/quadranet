@@ -1,5 +1,6 @@
-use crate::message::Message;
 use defmt::Format;
+
+use crate::message::Message;
 
 #[derive(Debug, Format)]
 pub enum CollectionError {

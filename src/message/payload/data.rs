@@ -1,6 +1,7 @@
-use crate::message::payload::MAX_PAYLOAD_SIZE;
 use defmt::Format;
 use serde::{Deserialize, Serialize};
+
+use crate::message::payload::MAX_PAYLOAD_SIZE;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Format)]
 pub enum DataType {

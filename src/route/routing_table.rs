@@ -1,5 +1,6 @@
-use crate::route::Route;
 use heapless::FnvIndexMap;
+
+use crate::route::Route;
 
 pub struct RoutingTable {
     routes: FnvIndexMap<u8, Route, 128>,

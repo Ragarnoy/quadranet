@@ -1,23 +1,25 @@
 use core::cmp;
-use crate::device::collections::MessageQueue;
-use crate::device::config::device_config::DeviceConfig;
-use crate::device::device_error::DeviceError;
-use crate::message::payload::discovery::DiscoveryType;
-use crate::message::payload::route::RouteType;
-use crate::message::payload::Payload;
-use crate::message::payload::Payload::Discovery;
-use crate::message::Message;
-use crate::route::routing_table::RoutingTable;
-use crate::route::Route;
-use config::lora_config::LoraConfig;
 use core::num::NonZeroU8;
+
 use defmt::{error, info, warn};
 use embassy_time::{Duration, Timer};
 use embedded_hal_async::delay::DelayNs;
 use heapless::Vec;
+use lora_phy::LoRa;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
-use lora_phy::LoRa;
+
+use config::lora_config::LoraConfig;
+
+use crate::device::collections::MessageQueue;
+use crate::device::config::device_config::DeviceConfig;
+use crate::device::device_error::DeviceError;
+use crate::message::Message;
+use crate::message::payload::discovery::DiscoveryType;
+use crate::message::payload::Payload::{self, Discovery};
+use crate::message::payload::route::RouteType;
+use crate::route::Route;
+use crate::route::routing_table::RoutingTable;
 
 pub mod collections;
 pub mod config;

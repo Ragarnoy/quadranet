@@ -1,7 +1,8 @@
-use crate::message::error::MessageError;
 use defmt::Format;
 use lora_phy::mod_params::RadioError;
 use snafu::Snafu;
+
+use crate::message::error::MessageError;
 
 #[derive(Debug, Snafu, Format)]
 pub enum DeviceError {
