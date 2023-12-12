@@ -14,7 +14,7 @@ fn test_message() {
     let payload = Payload::Data(DataType::new_text("Hello World!"));
     let ttl = 10;
 
-    let message = Message::new(source_id, Some(destination_id), payload.clone(), ttl);
+    let message = Message::new(source_id, Some(destination_id), payload.clone(), ttl, false);
 
     assert_eq!(message.source_id(), source_id);
     assert_eq!(message.destination_id(), Some(destination_id));
@@ -32,7 +32,7 @@ fn test_message_decrement_ttl() {
     let payload = Payload::Data(DataType::new_text("Hello World!"));
     let ttl = 10;
 
-    let mut message = Message::new(source_id, Some(destination_id), payload, ttl);
+    let mut message = Message::new(source_id, Some(destination_id), payload, ttl, false);
 
     assert_eq!(message.ttl(), ttl);
     message.decrement_ttl();
@@ -46,7 +46,7 @@ fn test_message_is_expired() {
     let payload = Payload::Data(DataType::new_text("Hello World!"));
     let ttl = 10;
 
-    let mut message = Message::new(source_id, Some(destination_id), payload, ttl);
+    let mut message = Message::new(source_id, Some(destination_id), payload, ttl, false);
 
     assert_eq!(message.is_expired(), false);
     for _ in 0..ttl {
@@ -62,7 +62,7 @@ fn test_message_serialization_deserialization() {
     let payload = Payload::Data(DataType::new_text("Hello World!"));
     let ttl = 10;
 
-    let message = Message::new(source_id, Some(destination_id), payload.clone(), ttl);
+    let message = Message::new(source_id, Some(destination_id), payload.clone(), ttl, false);
     let serialized = postcard::to_allocvec(&message).unwrap();
     let deserialized: Message = from_bytes(&serialized).unwrap();
 
@@ -86,7 +86,7 @@ fn test_broadcast_message_creation() {
     let payload = Payload::Data(DataType::new_text("Hello World!"));
     let ttl = 10;
 
-    let message = Message::new(source_id, None, payload, ttl);
+    let message = Message::new(source_id, None, payload, ttl, false);
 
     assert_eq!(message.destination_id(), None);
     assert_eq!(message.is_for_me(Uid::try_from(0x02).unwrap()), true); // Assuming 'is_for_me' checks if the message is a broadcast
@@ -99,7 +99,7 @@ fn test_message_for_me() {
     let payload = Payload::Data(DataType::new_text("Hello World!"));
     let ttl = 10;
 
-    let message = Message::new(source_id, Some(destination_id), payload, ttl);
+    let message = Message::new(source_id, Some(destination_id), payload, ttl, false);
 
     assert_eq!(message.is_for_me(destination_id), true);
     assert_eq!(message.is_for_me(source_id), false);

@@ -11,7 +11,7 @@ use route::RouteType;
 
 use crate::message::MAX_MESSAGE_SIZE;
 
-mod ack;
+pub mod ack;
 pub mod command;
 pub mod data;
 pub mod discovery;

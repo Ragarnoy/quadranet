@@ -16,32 +16,56 @@ mod test;
 
 const MAX_TTL: u8 = 10;
 const MAX_MESSAGE_SIZE: usize = 70;
+static mut MESSAGE_ID_COUNTER: u32 = 0;
+
+fn generate_message_id() -> u32 {
+    unsafe {
+        let id = MESSAGE_ID_COUNTER;
+        MESSAGE_ID_COUNTER = MESSAGE_ID_COUNTER.wrapping_add(1);
+        id
+    }
+}
+
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Format)]
 pub struct Message {
+    message_id: u32,
     /// Source ID is the UID of the node that sent the message
     source_id: Uid,
     /// Destination ID is the UID of the node the message is intended for
     destination_id: Option<Uid>,
     /// Time to live is the number of hops a message can take before it is considered expired
     ttl: u8,
+    /// Req ack is a flag that indicates if the message requires an acknowledgement
+    req_ack: bool,
     /// Payload is the data being sent
     payload: Payload,
 }
 
 impl Message {
-    pub fn new(source_id: Uid, destination_id: Option<Uid>, payload: Payload, ttl: u8) -> Self {
+    pub fn new(source_id: Uid, destination_id: Option<Uid>, payload: Payload, ttl: u8, require_ack: bool) -> Self {
         Self {
+            message_id: generate_message_id(),
             source_id,
             destination_id,
             payload,
+            req_ack: require_ack,
             ttl: ttl.min(MAX_TTL),
         }
     }
+    
     pub fn source_id(&self) -> Uid {
         self.source_id
     }
 
+    pub fn message_id(&self) -> u32 {
+        self.message_id
+    }
+    
+    pub fn req_ack(&self) -> bool {
+        self.req_ack
+    }
+    
     pub fn destination_id(&self) -> Option<Uid> {
         self.destination_id
     }

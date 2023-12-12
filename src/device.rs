@@ -2,19 +2,20 @@ use core::cmp;
 use core::num::NonZeroU8;
 
 use defmt::{error, info, warn};
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
-use heapless::Vec;
+use heapless::{FnvIndexMap, Vec};
 use lora_phy::LoRa;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
-
 use config::lora_config::LoraConfig;
 
 use crate::device::collections::MessageQueue;
 use crate::device::config::device_config::DeviceConfig;
 use crate::device::device_error::DeviceError;
+use crate::device::pending_ack::*;
 use crate::message::Message;
+use crate::message::payload::ack::AckType;
 use crate::message::payload::discovery::DiscoveryType;
 use crate::message::payload::Payload::{self, Discovery};
 use crate::message::payload::route::RouteType;
@@ -24,6 +25,7 @@ use crate::route::routing_table::RoutingTable;
 pub mod collections;
 pub mod config;
 pub mod device_error;
+pub mod pending_ack;
 
 pub static mut DEVICE_CONFIG: Option<DeviceConfig> = None;
 
@@ -51,6 +53,7 @@ where
     state: DeviceState,
     inqueue: &'static mut IN,
     outqueue: &'static mut OUT,
+    pending_acks: FnvIndexMap<u32, PendingAck, MAX_PENDING_ACKS>,
     routing_table: RoutingTable,
 }
 
@@ -106,6 +109,7 @@ where
             lora_config,
             inqueue,
             outqueue,
+            pending_acks: FnvIndexMap::new(),
             routing_table: RoutingTable::default(),
         }
     }
@@ -145,6 +149,7 @@ where
             message.destination_id(),
             message.payload().clone(),
             message.ttl(),
+            message.req_ack(),
         );
         if let Discovery(DiscoveryType::Response {
             hops: _hops,
@@ -155,7 +160,7 @@ where
                 hops: 0,
                 last_hop: self.uid,
             });
-            message = Message::new(self.uid, Some(last_hop), payload, message.ttl());
+            message = Message::new(self.uid, Some(last_hop), payload, message.ttl(), message.req_ack());
         }
 
         if let Some(route) = self
@@ -167,6 +172,7 @@ where
                 Some(route.next_hop),
                 message.payload().clone(),
                 message.ttl(),
+                message.req_ack(),
             );
             message.decrement_ttl();
             self.tx_message(message).await?;
@@ -199,9 +205,35 @@ where
         match message.payload() {
             Payload::Data(data) => {
                 info!("Received data: {:?}", defmt::Debug2Format(data));
+                if message.req_ack() {
+                    let res = self.outqueue.enqueue(Message::new(
+                        self.uid,
+                        Some(message.source_id()),
+                        Payload::Ack(AckType::Success { message_id: message.message_id() }),
+                        message.ttl(),
+                        false,
+                    ));
+
+                    if let Err(e) = res {
+                        error!("Error enqueueing ack message: {:?}", e);
+                    }
+                }
             }
             Payload::Command(command) => {
                 info!("Received command: {:?}", defmt::Debug2Format(command));
+                if message.req_ack() {
+                    let res = self.outqueue.enqueue(Message::new(
+                        self.uid,
+                        Some(message.source_id()),
+                        Payload::Ack(AckType::Success { message_id: message.message_id() }),
+                        message.ttl(),
+                        false,
+                    ));
+
+                    if let Err(e) = res {
+                        error!("Error enqueueing ack message: {:?}", e);
+                    }
+                }
             }
             Payload::Ack(ack) => {
                 info!("Received ack: {:?}", defmt::Debug2Format(ack));
@@ -214,18 +246,21 @@ where
             Discovery(discovery) => match discovery {
                 DiscoveryType::Request { original_ttl } => {
                     let hops = original_ttl - message.ttl();
-                    let res = self.outqueue.enqueue(Message::new(
-                        self.uid,
-                        Some(message.source_id()),
-                        Discovery(DiscoveryType::Response {
-                            hops,
-                            last_hop: self.uid,
-                        }),
-                        *original_ttl,
-                    ));
+                    if message.req_ack() {
+                        let res = self.outqueue.enqueue(Message::new(
+                            self.uid,
+                            Some(message.source_id()),
+                            Discovery(DiscoveryType::Response {
+                                hops,
+                                last_hop: self.uid,
+                            }),
+                            *original_ttl,
+                            false,
+                        ));
 
-                    if let Err(e) = res {
-                        error!("Error enqueueing discovery message: {:?}", e);
+                        if let Err(e) = res {
+                            error!("Error enqueueing discovery message: {:?}", e);
+                        }
                     }
                 }
                 DiscoveryType::Response { hops, last_hop } => {
@@ -243,13 +278,13 @@ where
 
     async fn send_message(&mut self, message: Message) -> Result<(), RadioError> {
         // Your existing send_message logic
-        let tx_message = Message::new(
-            self.uid,
-            message.destination_id(),
-            message.payload().clone(),
-            message.ttl(),
-        );
-        self.tx_message(tx_message).await?;
+
+        if message.req_ack() {
+            let pending_ack = PendingAck::new(message.payload().clone(), message.destination_id(), message.ttl());
+            self.pending_acks.insert(message.message_id(), pending_ack).expect("Pending acks is full");
+        }
+
+        self.tx_message(message).await?;
         Ok(())
     }
 
@@ -259,6 +294,7 @@ where
             None,
             Discovery(DiscoveryType::Request { original_ttl: 5 }),
             1,
+            true,
         ));
 
         if let Err(e) = res {
@@ -324,6 +360,29 @@ where
         }
         self.state = DeviceState::Idle;
     }
+
+    pub async fn check_pending_acks(&mut self) {
+        let now = Instant::now();
+        for (id, ack) in self.pending_acks.iter_mut() {
+            if now.duration_since(ack.timestamp) > Duration::from_secs(ACK_WAIT_TIME) {
+                if ack.attempts < MAX_ACK_ATTEMPTS {
+                    let message = Message::new(
+                        self.uid,
+                        ack.destination_uid(),
+                        ack.payload().clone(),
+                        ack.ttl(),
+                        true,
+                    );
+                    self.outqueue.enqueue(message).unwrap();
+                    ack.timestamp = Instant::now();
+                    ack.attempts += 1;
+                } else {
+                    warn!("Max attempts reached for message: {}", id)
+                }
+            }
+        }
+        self.pending_acks.retain(|_id, ack| !ack.is_acknowledged);
+    }
 }
 
 pub async fn run_quadranet<RK, DLY, IN, OUT>(
@@ -353,6 +412,9 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
                 error!("Error processing outqueue: {:?}", e);
             }
         }
+
+        // Check for pending acks
+        device.check_pending_acks().await;
 
         // Add a delay or yield the task to prevent it from hogging the CPU
         Timer::after(Duration::from_millis(10)).await;
