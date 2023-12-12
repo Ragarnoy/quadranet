@@ -373,7 +373,9 @@ where
                         ack.ttl(),
                         true,
                     );
-                    self.outqueue.enqueue(message).unwrap();
+                    self.outqueue.enqueue(message).unwrap_or_else(|e| {
+                        error!("Error enqueueing message: {:?}", e);
+                    });
                     ack.timestamp = Instant::now();
                     ack.attempts += 1;
                 } else {
