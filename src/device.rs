@@ -402,9 +402,10 @@ where
                     });
                     ack.timestamp = Instant::now();
                     ack.attempts += 1;
-                    info!("New attempt for message: {}", id);
+                    info!("Attempt {} for message: {}", ack.attempts, id);
                 } else {
-                    warn!("Max attempts reached for message: {}", id)
+                    warn!("Max attempts reached for message: {}", id);
+                    ack.is_acknowledged = true;
                 }
             }
         }
