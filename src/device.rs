@@ -394,6 +394,7 @@ where
                     });
                     ack.timestamp = Instant::now();
                     ack.attempts += 1;
+                    info!("New attempt for message: {}", id);
                 } else {
                     warn!("Max attempts reached for message: {}", id)
                 }
