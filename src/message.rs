@@ -62,6 +62,10 @@ impl Message {
         self.message_id
     }
 
+    pub fn set_message_id(&mut self, message_id: u32) {
+        self.message_id = message_id;
+    }
+
     pub fn req_ack(&self) -> bool {
         self.req_ack
     }

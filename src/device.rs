@@ -382,13 +382,14 @@ where
         for (id, ack) in self.pending_acks.iter_mut() {
             if now.duration_since(ack.timestamp) > Duration::from_secs(ACK_WAIT_TIME) {
                 if ack.attempts < MAX_ACK_ATTEMPTS {
-                    let message = Message::new(
+                    let mut message = Message::new(
                         self.uid,
                         ack.destination_uid(),
                         ack.payload().clone(),
                         ack.ttl(),
                         true,
                     );
+                    message.set_message_id(*id);
                     self.outqueue.enqueue(message).unwrap_or_else(|e| {
                         error!("Error enqueueing message: {:?}", e);
                     });
