@@ -1,26 +1,25 @@
 use core::cmp;
 use core::num::NonZeroU8;
 
+use config::lora_config::LoraConfig;
 use defmt::{error, info, warn};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
 use heapless::{FnvIndexMap, Vec};
-use lora_phy::LoRa;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
-use config::lora_config::LoraConfig;
+use lora_phy::LoRa;
 
 use crate::device::collections::MessageQueue;
 use crate::device::config::device_config::DeviceConfig;
 use crate::device::device_error::DeviceError;
 use crate::device::pending_ack::*;
-use crate::message::Message;
 use crate::message::payload::ack::AckType;
-use crate::message::payload::discovery::DiscoveryType;
-use crate::message::payload::Payload::{self, Discovery};
 use crate::message::payload::route::RouteType;
-use crate::route::Route;
+use crate::message::payload::Payload::{self, Ack, Discovery};
+use crate::message::Message;
 use crate::route::routing_table::RoutingTable;
+use crate::route::Route;
 
 pub mod collections;
 pub mod config;
@@ -151,16 +150,22 @@ where
             message.ttl(),
             message.req_ack(),
         );
-        if let Discovery(DiscoveryType::Response {
+        if let Ack(AckType::AckDiscovered {
             hops: _hops,
             last_hop,
         }) = *message.payload()
         {
-            let payload = Discovery(DiscoveryType::Response {
+            let payload = Ack(AckType::AckDiscovered {
                 hops: 0,
                 last_hop: self.uid,
             });
-            message = Message::new(self.uid, Some(last_hop), payload, message.ttl(), message.req_ack());
+            message = Message::new(
+                self.uid,
+                Some(last_hop),
+                payload,
+                message.ttl(),
+                message.req_ack(),
+            );
         }
 
         if let Some(route) = self
@@ -209,7 +214,9 @@ where
                     let res = self.outqueue.enqueue(Message::new(
                         self.uid,
                         Some(message.source_id()),
-                        Payload::Ack(AckType::Success { message_id: message.message_id() }),
+                        Ack(AckType::Success {
+                            message_id: message.message_id(),
+                        }),
                         message.ttl(),
                         false,
                     ));
@@ -225,7 +232,9 @@ where
                     let res = self.outqueue.enqueue(Message::new(
                         self.uid,
                         Some(message.source_id()),
-                        Payload::Ack(AckType::Success { message_id: message.message_id() }),
+                        Ack(AckType::Success {
+                            message_id: message.message_id(),
+                        }),
                         message.ttl(),
                         false,
                     ));
@@ -235,35 +244,13 @@ where
                     }
                 }
             }
-            Payload::Ack(ack) => {
-                info!("Received ack: {:?}", defmt::Debug2Format(ack));
-            }
-            Payload::Route(route) => match route {
-                RouteType::Request => {}
-                RouteType::Response => {}
-                RouteType::Error => {}
-            },
-            Discovery(discovery) => match discovery {
-                DiscoveryType::Request { original_ttl } => {
-                    let hops = original_ttl - message.ttl();
-                    if message.req_ack() {
-                        let res = self.outqueue.enqueue(Message::new(
-                            self.uid,
-                            Some(message.source_id()),
-                            Discovery(DiscoveryType::Response {
-                                hops,
-                                last_hop: self.uid,
-                            }),
-                            *original_ttl,
-                            false,
-                        ));
-
-                        if let Err(e) = res {
-                            error!("Error enqueueing discovery message: {:?}", e);
-                        }
-                    }
-                }
-                DiscoveryType::Response { hops, last_hop } => {
+            Ack(ack) => match ack {
+                AckType::Success { .. } => {}
+                AckType::AckDiscovered { hops, last_hop } => {
+                    self.pending_acks
+                        .get_mut(&message.message_id())
+                        .unwrap()
+                        .is_acknowledged = true;
                     self.routing_table.update(
                         message.source_id().get(),
                         Route {
@@ -272,7 +259,30 @@ where
                         },
                     );
                 }
+                AckType::Failure { .. } => {}
             },
+            Payload::Route(route) => match route {
+                RouteType::Request => {}
+                RouteType::Response => {}
+                RouteType::Error => {}
+            },
+            Discovery { original_ttl } => {
+                let hops = original_ttl - message.ttl();
+                let res = self.outqueue.enqueue(Message::new(
+                    self.uid,
+                    Some(message.source_id()),
+                    Ack(AckType::AckDiscovered {
+                        hops,
+                        last_hop: self.uid,
+                    }),
+                    *original_ttl,
+                    false,
+                ));
+
+                if let Err(e) = res {
+                    error!("Error enqueueing discovery response message: {:?}", e);
+                }
+            }
         }
     }
 
@@ -280,8 +290,14 @@ where
         // Your existing send_message logic
 
         if message.req_ack() {
-            let pending_ack = PendingAck::new(message.payload().clone(), message.destination_id(), message.ttl());
-            self.pending_acks.insert(message.message_id(), pending_ack).expect("Pending acks is full");
+            let pending_ack = PendingAck::new(
+                message.payload().clone(),
+                message.destination_id(),
+                message.ttl(),
+            );
+            self.pending_acks
+                .insert(message.message_id(), pending_ack)
+                .expect("Pending acks is full");
         }
 
         self.tx_message(message).await?;
@@ -292,7 +308,7 @@ where
         let res = self.outqueue.enqueue(Message::new(
             self.uid,
             None,
-            Discovery(DiscoveryType::Request { original_ttl: 5 }),
+            Discovery { original_ttl: 5 },
             1,
             true,
         ));

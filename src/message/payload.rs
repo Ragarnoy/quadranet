@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use ack::AckType;
 use command::CommandType;
 use data::DataType;
-use discovery::DiscoveryType;
 use route::RouteType;
 
 use crate::message::MAX_MESSAGE_SIZE;
@@ -27,6 +26,6 @@ pub enum Payload {
     Command(CommandType),
     Ack(AckType),
     Route(RouteType),
-    Discovery(DiscoveryType),
+    Discovery  { original_ttl: u8 },
     // Other payload types...
 }

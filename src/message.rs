@@ -53,7 +53,7 @@ impl Message {
             ttl: ttl.min(MAX_TTL),
         }
     }
-    
+
     pub fn source_id(&self) -> Uid {
         self.source_id
     }
@@ -61,11 +61,11 @@ impl Message {
     pub fn message_id(&self) -> u32 {
         self.message_id
     }
-    
+
     pub fn req_ack(&self) -> bool {
         self.req_ack
     }
-    
+
     pub fn destination_id(&self) -> Option<Uid> {
         self.destination_id
     }
