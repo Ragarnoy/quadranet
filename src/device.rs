@@ -2,7 +2,7 @@ use core::cmp;
 use core::num::NonZeroU8;
 
 use config::lora_config::LoraConfig;
-use defmt::{error, info, warn};
+use defmt::{error, info, trace, warn};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
 use heapless::{FnvIndexMap, Vec};
@@ -295,9 +295,16 @@ where
                 message.destination_id(),
                 message.ttl(),
             );
-            self.pending_acks
-                .insert(message.message_id(), pending_ack)
-                .expect("Pending acks is full");
+            if self.pending_acks.contains_key(&message.message_id()) {
+            } else {
+                self.pending_acks
+                    .insert(message.message_id(), pending_ack)
+                    .unwrap_or_else(|_| {
+                        error!("Error inserting pending ack");
+                        None
+                    });
+
+            }
         }
 
         self.tx_message(message).await?;
@@ -331,7 +338,7 @@ where
         self.state = DeviceState::Transmitting;
         let buffer: [u8; 70] = message.into();
         Timer::after(Duration::from_millis(200)).await;
-        info!("Sending message: {:?}", buffer);
+        trace!("Sending message: {:?}", buffer);
         self.radio
             .tx(
                 &self.lora_config.modulation,
