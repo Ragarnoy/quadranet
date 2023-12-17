@@ -142,24 +142,17 @@ where
         }
     }
 
-    async fn route_message(&mut self, message: Message) -> Result<(), DeviceError> {
-        let mut message = Message::new(
-            self.uid,
-            message.destination_id(),
-            message.payload().clone(),
-            message.ttl(),
-            message.req_ack(),
-        );
+    async fn route_message(&mut self, mut message: Message) -> Result<(), DeviceError> {
         if let Ack(AckType::AckDiscovered {
             hops: _hops,
             last_hop,
         }) = *message.payload()
         {
-            let payload = Ack(AckType::AckDiscovered {
+            let payload = AckType::AckDiscovered {
                 hops: 0,
                 last_hop: self.uid,
-            });
-            message = Message::new(
+            };
+            message = Message::new_ack(
                 self.uid,
                 Some(last_hop),
                 payload,
@@ -211,37 +204,13 @@ where
             Payload::Data(data) => {
                 info!("Received data: {:?}", defmt::Debug2Format(data));
                 if message.req_ack() {
-                    let res = self.outqueue.enqueue(Message::new(
-                        self.uid,
-                        Some(message.source_id()),
-                        Ack(AckType::Success {
-                            message_id: message.message_id(),
-                        }),
-                        message.ttl(),
-                        false,
-                    ));
-
-                    if let Err(e) = res {
-                        error!("Error enqueueing ack message: {:?}", e);
-                    }
+                    self.ack_success(&message);
                 }
             }
             Payload::Command(command) => {
                 info!("Received command: {:?}", defmt::Debug2Format(command));
                 if message.req_ack() {
-                    let res = self.outqueue.enqueue(Message::new(
-                        self.uid,
-                        Some(message.source_id()),
-                        Ack(AckType::Success {
-                            message_id: message.message_id(),
-                        }),
-                        message.ttl(),
-                        false,
-                    ));
-
-                    if let Err(e) = res {
-                        error!("Error enqueueing ack message: {:?}", e);
-                    }
+                    self.ack_success(&message);
                 }
             }
             Ack(ack) => match ack {
@@ -268,14 +237,14 @@ where
             },
             Discovery { original_ttl } => {
                 let hops = original_ttl - message.ttl();
-                let res = self.outqueue.enqueue(Message::new(
+                let res = self.outqueue.enqueue(Message::new_ack(
                     self.uid,
                     Some(message.source_id()),
-                    Ack(AckType::AckDiscovered {
+                    AckType::AckDiscovered {
                         hops,
                         last_hop: self.uid,
-                    }),
-                    *original_ttl,
+                    },
+                    message.ttl(),
                     false,
                 ));
 
@@ -283,6 +252,22 @@ where
                     error!("Error enqueueing discovery response message: {:?}", e);
                 }
             }
+        }
+    }
+
+    fn ack_success(&mut self, message: &Message) {
+        let res = self.outqueue.enqueue(Message::new_ack(
+            self.uid,
+            Some(message.source_id()),
+            AckType::Success {
+                message_id: message.message_id(),
+            },
+            message.ttl(),
+            false,
+        ));
+
+        if let Err(e) = res {
+            error!("Error enqueueing ack message: {:?}", e);
         }
     }
 
@@ -312,11 +297,10 @@ where
     }
 
     pub async fn discover_nodes(&mut self) {
-        let res = self.outqueue.enqueue(Message::new(
+        let res = self.outqueue.enqueue(Message::new_discovery(
             self.uid,
             None,
-            Discovery { original_ttl: 5 },
-            1,
+            5,
             true,
         ));
 

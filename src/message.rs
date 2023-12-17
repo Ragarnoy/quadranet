@@ -7,6 +7,10 @@ use payload::Payload;
 
 use crate::device::Uid;
 use crate::message::error::MessageError;
+use crate::message::payload::ack::AckType;
+use crate::message::payload::command::CommandType;
+use crate::message::payload::data::DataType;
+use crate::message::payload::route::RouteType;
 
 pub mod error;
 pub mod payload;
@@ -52,6 +56,26 @@ impl Message {
             req_ack: require_ack,
             ttl: ttl.min(MAX_TTL),
         }
+    }
+
+    pub fn new_data(source_id: Uid, destination_id: Option<Uid>, payload: DataType, ttl: u8, require_ack: bool) -> Self {
+        Self::new(source_id, destination_id, Payload::Data(payload), ttl, require_ack)
+    }
+
+    pub fn new_ack(source_id: Uid, destination_id: Option<Uid>, payload: AckType, ttl: u8, require_ack: bool) -> Self {
+        Self::new(source_id, destination_id, Payload::Ack(payload), ttl, require_ack)
+    }
+
+    pub fn new_command(source_id: Uid, destination_id: Option<Uid>, payload: CommandType, ttl: u8, require_ack: bool) -> Self {
+        Self::new(source_id, destination_id, Payload::Command(payload), ttl, require_ack)
+    }
+
+    pub fn new_route(source_id: Uid, destination_id: Option<Uid>, payload: RouteType, ttl: u8, require_ack: bool) -> Self {
+        Self::new(source_id, destination_id, Payload::Route(payload), ttl, require_ack)
+    }
+
+    pub fn new_discovery(source_id: Uid, destination_id: Option<Uid>, ttl: u8, require_ack: bool) -> Self {
+        Self::new(source_id, destination_id, Payload::Discovery { original_ttl: ttl }, ttl, require_ack)
     }
 
     pub fn source_id(&self) -> Uid {
