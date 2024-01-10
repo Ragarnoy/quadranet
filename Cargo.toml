@@ -4,8 +4,8 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-lora-phy = { git = "https://github.com/lora-rs/lora-rs", branch = "lthiery/ehal" }
-embedded-hal-async = "1.0.0-rc.3"
+lora-phy = { git = "https://github.com/ragarnoy/lora-rs", branch = "rel-ehal" }
+embedded-hal-async = "1.0.0"
 snafu = { version = "0.8.0", default-features = false }
 heapless = "0.8"
 postcard = "1.0"
@@ -15,6 +15,7 @@ serde = { version = "1.0", default-features = false, features = ["derive"] }
 
 [dependencies.embassy-time]
 git = "https://github.com/embassy-rs/embassy"
+rev = "0027a76bb61f19fcae1fe588ba3ff62660d7f7e3"
 features = ["defmt", "defmt-timestamp-uptime"]
 
 [dev-dependencies]
