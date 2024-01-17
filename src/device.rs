@@ -8,7 +8,7 @@ use embedded_hal_async::delay::DelayNs;
 use heapless::{FnvIndexMap, Vec};
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
-use lora_phy::LoRa;
+use lora_phy::{LoRa, RxMode};
 
 use crate::device::collections::MessageQueue;
 use crate::device::config::device_config::DeviceConfig;
@@ -339,10 +339,9 @@ where
         self.state = DeviceState::Receiving;
         self.radio
             .prepare_for_rx(
+                RxMode::Single(10000),
                 &self.lora_config.modulation,
                 &self.lora_config.rx_pkt_params,
-                Some(1),
-                None,
                 false,
             )
             .await
