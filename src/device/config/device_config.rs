@@ -1,4 +1,5 @@
 use defmt::Format;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Format)]
 pub struct DeviceConfig {
@@ -82,7 +83,7 @@ pub enum DeviceClass {
     C,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Format)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Format, Deserialize, Serialize)]
 pub enum DeviceCapabilities {
     Lora,
     LoraBle,

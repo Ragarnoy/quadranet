@@ -4,12 +4,13 @@ use defmt::Format;
 use serde::{Deserialize, Serialize};
 
 use payload::Payload;
-
+use crate::device::config::device_config::DeviceCapabilities;
 use crate::device::Uid;
 use crate::message::error::MessageError;
 use crate::message::payload::ack::AckType;
 use crate::message::payload::command::CommandType;
 use crate::message::payload::data::DataType;
+use crate::message::payload::discovery::DiscoveryType;
 use crate::message::payload::route::RouteType;
 
 pub mod error;
@@ -74,9 +75,15 @@ impl Message {
         Self::new(source_id, destination_id, Payload::Route(payload), ttl, require_ack)
     }
 
-    pub fn new_discovery(source_id: Uid, destination_id: Option<Uid>, ttl: u8, require_ack: bool) -> Self {
-        Self::new(source_id, destination_id, Payload::Discovery { original_ttl: ttl }, ttl, require_ack)
+    pub fn new_discovery(source_id: Uid, destination_id: Option<Uid>, ttl: u8, require_ack: bool, device_capabilities: DeviceCapabilities) -> Self {
+        let discovery_payload = DiscoveryType {
+            original_ttl: ttl,
+            sender_uid: source_id,
+            sender_capabilities: device_capabilities,
+        };
+        Self::new(source_id, destination_id, Payload::Discovery(discovery_payload), ttl, require_ack)
     }
+
 
     pub fn source_id(&self) -> Uid {
         self.source_id

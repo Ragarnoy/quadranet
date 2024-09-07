@@ -9,6 +9,7 @@ use data::DataType;
 use route::RouteType;
 
 use crate::message::MAX_MESSAGE_SIZE;
+use crate::message::payload::discovery::DiscoveryType;
 
 pub mod ack;
 pub mod command;
@@ -26,6 +27,6 @@ pub enum Payload {
     Command(CommandType),
     Ack(AckType),
     Route(RouteType),
-    Discovery  { original_ttl: u8 },
+    Discovery(DiscoveryType),
     // Other payload types...
 }

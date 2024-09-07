@@ -1,3 +1,4 @@
+use core::cell::OnceCell;
 use core::cmp;
 use core::num::NonZeroU8;
 
@@ -26,7 +27,7 @@ pub mod config;
 pub mod device_error;
 pub mod pending_ack;
 
-pub static mut DEVICE_CONFIG: Option<DeviceConfig> = None;
+pub static mut DEVICE_CONFIG: OnceCell<Option<DeviceConfig>> = OnceCell::new();
 
 static mut DEVICE_STATE: DeviceState = DeviceState::Idle;
 
@@ -99,7 +100,7 @@ where
         outqueue: &'static mut OUT,
     ) -> Self {
         unsafe {
-            DEVICE_CONFIG = Some(device_config);
+            DEVICE_CONFIG = OnceCell::from(Some(device_config));
         }
         Self {
             uid,
@@ -199,7 +200,6 @@ where
     }
 
     pub async fn process_message(&mut self, message: Message) {
-        // Your existing logic for processing messages
         match message.payload() {
             Payload::Data(data) => {
                 info!("Received data: {:?}", defmt::Debug2Format(data));
@@ -235,8 +235,8 @@ where
                 RouteType::Response => {}
                 RouteType::Error => {}
             },
-            Discovery { original_ttl } => {
-                let hops = original_ttl - message.ttl();
+            Discovery(discovery) => {
+                let hops = discovery.original_ttl - message.ttl();
                 let res = self.outqueue.enqueue(Message::new_ack(
                     self.uid,
                     Some(message.source_id()),
@@ -272,8 +272,6 @@ where
     }
 
     async fn send_message(&mut self, message: Message) -> Result<(), RadioError> {
-        // Your existing send_message logic
-
         if message.req_ack() {
             let pending_ack = PendingAck::new(
                 message.payload().clone(),
@@ -302,6 +300,7 @@ where
             None,
             5,
             true,
+            unsafe { DEVICE_CONFIG.get().unwrap().unwrap().device_capabilities }
         ));
 
         if let Err(e) = res {
@@ -310,26 +309,23 @@ where
     }
 
     async fn tx_message(&mut self, message: Message) -> Result<(), RadioError> {
-        // Your existing send_message logic
+        let buffer: [u8; 70] = message.into();
+        let params = &mut self.lora_config.tx_pkt_params;
+        
         self.radio
             .prepare_for_tx(
                 &self.lora_config.modulation,
+                params,
                 self.lora_config.tx_power,
-                self.lora_config.boosted,
+                &buffer,
             )
             .await?;
 
         self.state = DeviceState::Transmitting;
-        let buffer: [u8; 70] = message.into();
         Timer::after(Duration::from_millis(200)).await;
         trace!("Sending message: {:?}", buffer);
         self.radio
-            .tx(
-                &self.lora_config.modulation,
-                &mut self.lora_config.tx_pkt_params,
-                &buffer,
-                0xffffff,
-            )
+            .tx()
             .await?;
         self.state = DeviceState::Idle;
         Ok(())
@@ -342,7 +338,6 @@ where
                 RxMode::Single(10000),
                 &self.lora_config.modulation,
                 &self.lora_config.rx_pkt_params,
-                false,
             )
             .await
             .expect("Failed to prepare for RX");
