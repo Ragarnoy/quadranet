@@ -125,6 +125,10 @@ where
     }
 
     pub async fn enqueue_message(&mut self, message: Message) {
+        if message.source_id() == self.uid {
+            warn!("Ignore self-originated message");
+            return;
+        }
         if let Some(receiver) = message.destination_id() {
             if receiver.get() == self.uid.get() {
                 if let Err(e) = self.inqueue.enqueue(message) {
