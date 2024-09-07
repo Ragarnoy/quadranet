@@ -1,11 +1,11 @@
 use core::convert::TryFrom;
 
-use postcard::from_bytes;
+use postcard::{from_bytes, to_allocvec};
 
 use crate::device::Uid;
-use crate::message::Message;
 use crate::message::payload::data::DataType;
 use crate::message::payload::Payload;
+use crate::message::Message;
 
 #[test]
 fn test_message() {
@@ -63,7 +63,7 @@ fn test_message_serialization_deserialization() {
     let ttl = 10;
 
     let message = Message::new(source_id, Some(destination_id), payload.clone(), ttl, false);
-    let serialized = postcard::to_allocvec(&message).unwrap();
+    let serialized = to_allocvec(&message).unwrap();
     let deserialized: Message = from_bytes(&serialized).unwrap();
 
     assert_eq!(deserialized.source_id(), source_id);
@@ -104,3 +104,4 @@ fn test_message_for_me() {
     assert_eq!(message.is_for_me(destination_id), true);
     assert_eq!(message.is_for_me(source_id), false);
 }
+

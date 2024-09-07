@@ -3,7 +3,7 @@ use core::cmp;
 use core::num::NonZeroU8;
 
 use config::lora_config::LoraConfig;
-use defmt::{error, info, trace, warn};
+use defmt::{error, info, trace, warn, Display2Format};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
 use heapless::{FnvIndexMap, Vec};
@@ -19,6 +19,7 @@ use crate::message::payload::ack::AckType;
 use crate::message::payload::route::RouteType;
 use crate::message::payload::Payload::{self, Ack, Discovery};
 use crate::message::Message;
+use crate::message::payload::data::DataType;
 use crate::route::routing_table::RoutingTable;
 use crate::route::Route;
 
@@ -202,7 +203,14 @@ where
     pub async fn process_message(&mut self, message: Message) {
         match message.payload() {
             Payload::Data(data) => {
-                info!("Received data: {:?}", defmt::Debug2Format(data));
+                match data {
+                    DataType::Text(text) => {
+                        info!("Received text message: {}", text);
+                    }
+                    DataType::Binary(_) => {
+                        info!("Received data: {:?}", defmt::Debug2Format(data));
+                    }
+                }
                 if message.req_ack() {
                     self.ack_success(&message);
                 }
@@ -344,11 +352,14 @@ where
         Timer::after(Duration::from_millis(50)).await;
         match self.radio.rx(&self.lora_config.rx_pkt_params, buf).await {
             Ok((size, _status)) => {
-                if let Ok(message) = Message::try_from(&mut buf[..size as usize]) {
-                    info!("Received message: {:?}", message);
-                    self.enqueue_message(message).await;
-                } else {
-                    warn!("Received invalid message");
+                match Message::try_from(&mut buf[..size as usize]) {
+                    Ok(message) => {
+                        info!("Received message: {:?}", message);
+                        self.enqueue_message(message).await;
+                    }
+                    Err(e) => {
+                        warn!("Received invalid message:{}", Display2Format(&e));
+                    }
                 }
             }
             Err(RadioError::ReceiveTimeout) => {
