@@ -77,7 +77,6 @@ impl Message {
     pub fn new_discovery(source_id: Uid, destination_id: Option<Uid>, ttl: u8, require_ack: bool) -> Self {
         let discovery_payload = DiscoveryType {
             original_ttl: ttl,
-            sender_uid: source_id,
             sender_capabilities: unsafe { DEVICE_CONFIG.get().unwrap().unwrap().device_capabilities },
         };
         Self::new(source_id, destination_id, Payload::Discovery(discovery_payload), ttl, require_ack)

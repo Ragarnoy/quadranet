@@ -125,10 +125,6 @@ where
     }
 
     pub async fn enqueue_message(&mut self, message: Message) {
-        if message.source_id() == self.uid {
-            warn!("Ignore self-originated message");
-            return;
-        }
         if let Some(receiver) = message.destination_id() {
             if receiver.get() == self.uid.get() {
                 if let Err(e) = self.inqueue.enqueue(message) {
@@ -204,10 +200,6 @@ where
     }
 
     pub async fn process_message(&mut self, message: Message) {
-        if message.source_id() == self.uid {
-            warn!("Ignore self-originated message");
-            return;
-        }
         match message.payload() {
             Payload::Data(data) => {
                 info!("Received data: {:?}", defmt::Debug2Format(data));
@@ -387,7 +379,7 @@ where
                     });
                     ack.timestamp = Instant::now();
                     ack.attempts += 1;
-                    info!("Attempt {} for message: {}", ack.attempts, id);
+                    trace!("Attempt {} for message: {}", ack.attempts, id);
                 } else {
                     warn!("Max attempts reached for message: {}", id);
                     ack.is_acknowledged = true;
