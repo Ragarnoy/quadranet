@@ -299,8 +299,7 @@ where
             self.uid,
             None,
             5,
-            true,
-            unsafe { DEVICE_CONFIG.get().unwrap().unwrap().device_capabilities }
+            true
         ));
 
         if let Err(e) = res {

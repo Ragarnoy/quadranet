@@ -14,6 +14,7 @@ defmt-rtt = "0.4"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 
 [dependencies.embassy-time]
+version = "0.3.2"
 git = "https://github.com/embassy-rs/embassy"
 features = ["defmt", "defmt-timestamp-uptime"]
 
