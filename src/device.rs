@@ -224,10 +224,7 @@ where
             Ack(ack) => match ack {
                 AckType::Success { .. } => {}
                 AckType::AckDiscovered { hops, last_hop } => {
-                    self.pending_acks
-                        .get_mut(&message.message_id())
-                        .unwrap()
-                        .is_acknowledged = true;
+                    // Always update the routing table
                     self.routing_table.update(
                         message.source_id().get(),
                         Route {
@@ -235,6 +232,16 @@ where
                             hop_count: *hops,
                         },
                     );
+
+                    // Only update pending_acks if we originated the discovery
+                    if message.source_id() == self.uid {
+                        if let Some(pending_ack) = self.pending_acks.get_mut(&message.message_id()) {
+                            info!("ACK Complete for Message {}", message.message_id());
+                            pending_ack.is_acknowledged = true;
+                        } else {
+                            warn!("Received unexpected AckDiscovered for our message ID: {}", message.message_id());
+                        }
+                    }
                 }
                 AckType::Failure { .. } => {}
             },
