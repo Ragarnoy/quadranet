@@ -3,7 +3,7 @@ use core::cmp;
 use core::num::NonZeroU8;
 
 use config::lora_config::LoraConfig;
-use defmt::{error, info, trace, warn, Display2Format};
+use defmt::{error, info, debug, warn, Display2Format};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
 use heapless::{FnvIndexMap, Vec};
@@ -205,10 +205,10 @@ where
             Payload::Data(data) => {
                 match data {
                     DataType::Text(text) => {
-                        trace!("Received text message: {}", text);
+                        debug!("Received text message: {}", text);
                     }
                     DataType::Binary(_) => {
-                        trace!("Received data: {:?}", defmt::Debug2Format(data));
+                        debug!("Received data: {:?}", defmt::Debug2Format(data));
                     }
                 }
                 if message.req_ack() {
@@ -216,7 +216,7 @@ where
                 }
             }
             Payload::Command(command) => {
-                trace!("Received command: {:?}", defmt::Debug2Format(command));
+                debug!("Received command: {:?}", defmt::Debug2Format(command));
                 if message.req_ack() {
                     self.ack_success(&message);
                 }
@@ -337,7 +337,7 @@ where
 
         self.state = DeviceState::Transmitting;
         Timer::after(Duration::from_millis(200)).await;
-        trace!("Sending message: {:?}", buffer);
+        debug!("Sending message: {:?}", buffer);
         self.radio
             .tx()
             .await?;
@@ -396,7 +396,7 @@ where
                     });
                     ack.timestamp = Instant::now();
                     ack.attempts += 1;
-                    trace!("Attempt {} for message: {}", ack.attempts, id);
+                    debug!("Attempt {} for message: {}", ack.attempts, id);
                 } else {
                     warn!("Max attempts reached for message: {}", id);
                     ack.is_acknowledged = true;

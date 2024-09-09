@@ -1,4 +1,4 @@
-use defmt::trace;
+use defmt::debug;
 use heapless::FnvIndexMap;
 
 use crate::route::Route;
@@ -23,7 +23,7 @@ impl RoutingTable {
             // Insert the new entry
             let _ = self.routes.insert(destination, route);
         }
-        trace!("ROUTING TABLE UPDATE @{}", destination);
+        debug!("ROUTING TABLE UPDATE @{}", destination);
     }
 
     pub fn lookup_route(&self, destination: u8) -> Option<Route> {
