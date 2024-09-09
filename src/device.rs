@@ -205,10 +205,10 @@ where
             Payload::Data(data) => {
                 match data {
                     DataType::Text(text) => {
-                        info!("Received text message: {}", text);
+                        trace!("Received text message: {}", text);
                     }
                     DataType::Binary(_) => {
-                        info!("Received data: {:?}", defmt::Debug2Format(data));
+                        trace!("Received data: {:?}", defmt::Debug2Format(data));
                     }
                 }
                 if message.req_ack() {
@@ -216,7 +216,7 @@ where
                 }
             }
             Payload::Command(command) => {
-                info!("Received command: {:?}", defmt::Debug2Format(command));
+                trace!("Received command: {:?}", defmt::Debug2Format(command));
                 if message.req_ack() {
                     self.ack_success(&message);
                 }
