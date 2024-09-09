@@ -184,9 +184,10 @@ where
 
     pub async fn process_inqueue(&mut self) -> Result<(), RadioError> {
         let to_process = cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
+        // Not happy with this
         for _ in 0..to_process {
             let message: Message = self.inqueue.dequeue().unwrap(); // Handle this unwrap appropriately
-            self.process_message(message).await;
+            self.process_message(&message).await;
         }
         Ok(())
     }
@@ -200,7 +201,7 @@ where
         Ok(())
     }
 
-    pub async fn process_message(&mut self, message: Message) {
+    pub async fn process_message(&mut self, message: &Message) {
         match message.payload() {
             Payload::Data(data) => {
                 match data {
@@ -361,6 +362,7 @@ where
             Ok((size, _status)) => {
                 match Message::try_from(&mut buf[..size as usize]) {
                     Ok(message) => {
+                        self.process_message(&message).await;
                         self.enqueue_message(message).await;
                     }
                     Err(e) => {
@@ -422,7 +424,7 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
         device.try_wait_message(buf).await;
 
         // Process InQueue
-        if !device.inqueue.is_empty() {
+        if !device.inqueue.len() == INQUEUE_SIZE - 1{
             if let Err(e) = device.process_inqueue().await {
                 error!("Error processing inqueue: {:?}", e);
             }
