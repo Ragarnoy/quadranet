@@ -313,7 +313,7 @@ where
         let res = self.outqueue.enqueue(Message::new_discovery(
             self.uid,
             None,
-            5,
+            3,
             true
         ));
 
@@ -361,7 +361,6 @@ where
             Ok((size, _status)) => {
                 match Message::try_from(&mut buf[..size as usize]) {
                     Ok(message) => {
-                        info!("Received message: {:?}", message);
                         self.enqueue_message(message).await;
                     }
                     Err(e) => {
