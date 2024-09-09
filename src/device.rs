@@ -336,7 +336,7 @@ where
             .await?;
 
         self.state = DeviceState::Transmitting;
-        Timer::after(Duration::from_millis(200)).await;
+        Timer::after(Duration::from_millis(100)).await;
         debug!("Sending message: {:?}", buffer);
         self.radio
             .tx()
