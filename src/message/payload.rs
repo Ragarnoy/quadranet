@@ -8,8 +8,8 @@ use command::CommandType;
 use data::DataType;
 use route::RouteType;
 
-use crate::message::MAX_MESSAGE_SIZE;
 use crate::message::payload::discovery::DiscoveryType;
+use crate::message::MAX_MESSAGE_SIZE;
 
 pub mod ack;
 pub mod command;

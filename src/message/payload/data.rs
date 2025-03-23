@@ -47,8 +47,8 @@ impl Serialize for Text {
     where
         S: serde::Serializer,
     {
-        let text = core::str::from_utf8(&self.data[..self.len])
-            .map_err(serde::ser::Error::custom)?;
+        let text =
+            core::str::from_utf8(&self.data[..self.len]).map_err(serde::ser::Error::custom)?;
         serializer.serialize_str(text)
     }
 }
@@ -116,11 +116,11 @@ impl<'de> Deserialize<'de> for Binary {
 
 #[cfg(test)]
 mod test {
-    use postcard::{from_bytes, to_allocvec};
     use crate::device::Uid;
-    use crate::message::Message;
-    use crate::message::payload::{Payload, MAX_PAYLOAD_SIZE};
     use crate::message::payload::data::DataType;
+    use crate::message::payload::{Payload, MAX_PAYLOAD_SIZE};
+    use crate::message::Message;
+    use postcard::{from_bytes, to_allocvec};
 
     #[test]
     fn test_message_serialization_deserialization_thorough() {

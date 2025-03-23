@@ -104,4 +104,3 @@ fn test_message_for_me() {
     assert_eq!(message.is_for_me(destination_id), true);
     assert_eq!(message.is_for_me(source_id), false);
 }
-
