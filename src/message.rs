@@ -1,16 +1,18 @@
 use core::convert::TryFrom;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use defmt::Format;
 use serde::{Deserialize, Serialize};
 
-use payload::Payload;
-use crate::device::{Uid, DEVICE_CONFIG};
+use crate::device::config::device_config::DeviceConfig;
+use crate::device::Uid;
 use crate::message::error::MessageError;
 use crate::message::payload::ack::AckType;
 use crate::message::payload::command::CommandType;
 use crate::message::payload::data::DataType;
 use crate::message::payload::discovery::DiscoveryType;
 use crate::message::payload::route::RouteType;
+use payload::Payload;
 
 pub mod error;
 pub mod payload;
@@ -20,16 +22,13 @@ mod test;
 
 const MAX_TTL: u8 = 10;
 const MAX_MESSAGE_SIZE: usize = 70;
-static mut MESSAGE_ID_COUNTER: u32 = 0;
+
+// Use atomic for thread-safe message ID generation
+static MESSAGE_ID_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 fn generate_message_id() -> u32 {
-    unsafe {
-        let id = MESSAGE_ID_COUNTER;
-        MESSAGE_ID_COUNTER = MESSAGE_ID_COUNTER.wrapping_add(1);
-        id
-    }
+    MESSAGE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
-
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Format)]
 pub struct Message {
@@ -47,7 +46,13 @@ pub struct Message {
 }
 
 impl Message {
-    pub fn new(source_id: Uid, destination_id: Option<Uid>, payload: Payload, ttl: u8, require_ack: bool) -> Self {
+    pub fn new(
+        source_id: Uid,
+        destination_id: Option<Uid>,
+        payload: Payload,
+        ttl: u8,
+        require_ack: bool,
+    ) -> Self {
         Self {
             message_id: generate_message_id(),
             source_id,
@@ -58,30 +63,89 @@ impl Message {
         }
     }
 
-    pub fn new_data(source_id: Uid, destination_id: Option<Uid>, payload: DataType, ttl: u8, require_ack: bool) -> Self {
-        Self::new(source_id, destination_id, Payload::Data(payload), ttl, require_ack)
+    pub fn new_data(
+        source_id: Uid,
+        destination_id: Option<Uid>,
+        payload: DataType,
+        ttl: u8,
+        require_ack: bool,
+    ) -> Self {
+        Self::new(
+            source_id,
+            destination_id,
+            Payload::Data(payload),
+            ttl,
+            require_ack,
+        )
     }
 
-    pub fn new_ack(source_id: Uid, destination_id: Option<Uid>, payload: AckType, ttl: u8, require_ack: bool) -> Self {
-        Self::new(source_id, destination_id, Payload::Ack(payload), ttl, require_ack)
+    pub fn new_ack(
+        source_id: Uid,
+        destination_id: Option<Uid>,
+        payload: AckType,
+        ttl: u8,
+        require_ack: bool,
+    ) -> Self {
+        Self::new(
+            source_id,
+            destination_id,
+            Payload::Ack(payload),
+            ttl,
+            require_ack,
+        )
     }
 
-    pub fn new_command(source_id: Uid, destination_id: Option<Uid>, payload: CommandType, ttl: u8, require_ack: bool) -> Self {
-        Self::new(source_id, destination_id, Payload::Command(payload), ttl, require_ack)
+    pub fn new_command(
+        source_id: Uid,
+        destination_id: Option<Uid>,
+        payload: CommandType,
+        ttl: u8,
+        require_ack: bool,
+    ) -> Self {
+        Self::new(
+            source_id,
+            destination_id,
+            Payload::Command(payload),
+            ttl,
+            require_ack,
+        )
     }
 
-    pub fn new_route(source_id: Uid, destination_id: Option<Uid>, payload: RouteType, ttl: u8, require_ack: bool) -> Self {
-        Self::new(source_id, destination_id, Payload::Route(payload), ttl, require_ack)
+    pub fn new_route(
+        source_id: Uid,
+        destination_id: Option<Uid>,
+        payload: RouteType,
+        ttl: u8,
+        require_ack: bool,
+    ) -> Self {
+        Self::new(
+            source_id,
+            destination_id,
+            Payload::Route(payload),
+            ttl,
+            require_ack,
+        )
     }
 
-    pub fn new_discovery(source_id: Uid, destination_id: Option<Uid>, ttl: u8, require_ack: bool) -> Self {
+    pub fn new_discovery(
+        source_id: Uid,
+        destination_id: Option<Uid>,
+        ttl: u8,
+        require_ack: bool,
+        device_config: DeviceConfig,
+    ) -> Self {
         let discovery_payload = DiscoveryType {
             original_ttl: ttl,
-            sender_capabilities: unsafe { DEVICE_CONFIG.get().unwrap().unwrap().device_capabilities },
+            sender_capabilities: device_config.device_capabilities, // Use the provided config
         };
-        Self::new(source_id, destination_id, Payload::Discovery(discovery_payload), ttl, require_ack)
+        Self::new(
+            source_id,
+            destination_id,
+            Payload::Discovery(discovery_payload),
+            ttl,
+            require_ack,
+        )
     }
-
 
     pub fn source_id(&self) -> Uid {
         self.source_id

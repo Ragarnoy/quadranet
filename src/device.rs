@@ -1,9 +1,8 @@
-use core::cell::OnceCell;
 use core::cmp;
 use core::num::NonZeroU8;
 
 use config::lora_config::LoraConfig;
-use defmt::{error, info, debug, warn, Display2Format};
+use defmt::{debug, error, info, warn, Display2Format};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
 use heapless::{FnvIndexMap, Vec};
@@ -16,10 +15,10 @@ use crate::device::config::device_config::DeviceConfig;
 use crate::device::device_error::DeviceError;
 use crate::device::pending_ack::*;
 use crate::message::payload::ack::AckType;
+use crate::message::payload::data::DataType;
 use crate::message::payload::route::RouteType;
 use crate::message::payload::Payload::{self, Ack, Discovery};
 use crate::message::Message;
-use crate::message::payload::data::DataType;
 use crate::route::routing_table::RoutingTable;
 use crate::route::Route;
 
@@ -27,10 +26,6 @@ pub mod collections;
 pub mod config;
 pub mod device_error;
 pub mod pending_ack;
-
-pub static mut DEVICE_CONFIG: OnceCell<Option<DeviceConfig>> = OnceCell::new();
-
-static mut DEVICE_STATE: DeviceState = DeviceState::Idle;
 
 const INQUEUE_SIZE: usize = 32;
 const OUTQUEUE_SIZE: usize = 32;
@@ -40,6 +35,24 @@ const MAX_OUTQUEUE_TRANSMIT: usize = 5;
 pub type Uid = NonZeroU8;
 pub type InQueue = Vec<Message, INQUEUE_SIZE>;
 pub type OutQueue = Vec<Message, OUTQUEUE_SIZE>;
+
+// Backoff configuration - moved to a central location
+pub const INITIAL_BACKOFF_MS: u64 = 500; // Start with 500ms backoff
+pub const BACKOFF_FACTOR: u64 = 2; // Double the backoff each retry
+pub const MAX_BACKOFF_MS: u64 = 10000; // Max backoff of 10 seconds
+
+// Calculate exponential backoff - implemented as a free function to avoid borrow checker issues
+pub fn calculate_backoff(attempt: u8) -> u64 {
+    if attempt == 0 {
+        return INITIAL_BACKOFF_MS;
+    }
+
+    // Calculate exponential backoff: initial_backoff * backoff_factor^attempt
+    let backoff = INITIAL_BACKOFF_MS * BACKOFF_FACTOR.pow(attempt as u32);
+
+    // Cap at maximum backoff
+    backoff.min(MAX_BACKOFF_MS)
+}
 
 pub struct LoraDevice<RK, DLY, IN, OUT>
 where
@@ -56,6 +69,7 @@ where
     outqueue: &'static mut OUT,
     pending_acks: FnvIndexMap<u32, PendingAck, MAX_PENDING_ACKS>,
     routing_table: RoutingTable,
+    device_config: DeviceConfig, // Encapsulated config instead of global
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -85,6 +99,7 @@ pub enum DeviceState {
 /// - `inqueue`: Queue for incoming messages.
 /// - `outqueue`: Queue for outgoing messages.
 /// - `routing_table`: Table for managing routes to other devices.
+/// - `device_config`: Configuration for the device behavior.
 impl<RK, DLY, IN, OUT> LoraDevice<RK, DLY, IN, OUT>
 where
     RK: RadioKind,
@@ -100,9 +115,6 @@ where
         inqueue: &'static mut IN,
         outqueue: &'static mut OUT,
     ) -> Self {
-        unsafe {
-            DEVICE_CONFIG = OnceCell::from(Some(device_config));
-        }
         Self {
             uid,
             radio,
@@ -112,6 +124,7 @@ where
             outqueue,
             pending_acks: FnvIndexMap::new(),
             routing_table: RoutingTable::default(),
+            device_config, // Store config directly in the struct
         }
     }
 
@@ -119,10 +132,14 @@ where
         self.uid
     }
 
-    pub fn update_state(&self) {
-        unsafe {
-            DEVICE_STATE = self.state;
-        }
+    // Return current device state for external observers
+    pub fn device_state(&self) -> DeviceState {
+        self.state
+    }
+
+    // Return current device configuration
+    pub fn device_config(&self) -> &DeviceConfig {
+        &self.device_config
     }
 
     pub async fn enqueue_message(&mut self, message: Message) {
@@ -184,10 +201,10 @@ where
 
     pub async fn process_inqueue(&mut self) -> Result<(), RadioError> {
         let to_process = cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
-        // Not happy with this
         for _ in 0..to_process {
-            let message: Message = self.inqueue.dequeue().unwrap(); // Handle this unwrap appropriately
-            self.process_message(&message).await;
+            if let Ok(message) = self.inqueue.dequeue() {
+                self.process_message(&message).await;
+            }
         }
         Ok(())
     }
@@ -195,8 +212,9 @@ where
     pub async fn process_outqueue(&mut self) -> Result<(), RadioError> {
         let to_transmit = cmp::min(self.outqueue.len(), MAX_OUTQUEUE_TRANSMIT);
         for _ in 0..to_transmit {
-            let message: Message = self.outqueue.dequeue().expect("Outqueue is empty");
-            self.send_message(message).await?;
+            if let Ok(message) = self.outqueue.dequeue() {
+                self.send_message(message).await?;
+            }
         }
         Ok(())
     }
@@ -222,30 +240,7 @@ where
                     self.ack_success(&message);
                 }
             }
-            Ack(ack) => match ack {
-                AckType::Success { .. } => {}
-                AckType::AckDiscovered { hops, last_hop } => {
-                    // Always update the routing table
-                    self.routing_table.update(
-                        message.source_id().get(),
-                        Route {
-                            next_hop: *last_hop,
-                            hop_count: *hops,
-                        },
-                    );
-
-                    // Only update pending_acks if we originated the discovery
-                    if message.source_id() == self.uid {
-                        if let Some(pending_ack) = self.pending_acks.get_mut(&message.message_id()) {
-                            info!("ACK Complete for Message {}", message.message_id());
-                            pending_ack.is_acknowledged = true;
-                        } else {
-                            warn!("Received unexpected AckDiscovered for our message ID: {}", message.message_id());
-                        }
-                    }
-                }
-                AckType::Failure { .. } => {}
-            },
+            Ack(ack) => self.handle_ack_message(message, ack).await,
             Payload::Route(route) => match route {
                 RouteType::Request => {}
                 RouteType::Response => {}
@@ -271,6 +266,53 @@ where
         }
     }
 
+    // Centralized ACK handling
+    async fn handle_ack_message(&mut self, message: &Message, ack: &AckType) {
+        match ack {
+            AckType::Success { message_id } => {
+                if let Some(pending_ack) = self.pending_acks.get_mut(message_id) {
+                    info!("Success ACK received for Message {}", message_id);
+                    pending_ack.is_acknowledged = true;
+                }
+            }
+            AckType::AckDiscovered { hops, last_hop } => {
+                // Always update the routing table
+                self.routing_table.update(
+                    message.source_id().get(),
+                    Route {
+                        next_hop: *last_hop,
+                        hop_count: *hops,
+                    },
+                );
+
+                // Only update pending_acks if we originated the discovery
+                if message.source_id() == self.uid {
+                    if let Some(pending_ack) = self.pending_acks.get_mut(&message.message_id()) {
+                        info!(
+                            "Discovery ACK Complete for Message {}",
+                            message.message_id()
+                        );
+                        pending_ack.is_acknowledged = true;
+                    } else {
+                        warn!(
+                            "Received unexpected AckDiscovered for our message ID: {}",
+                            message.message_id()
+                        );
+                    }
+                }
+            }
+            AckType::Failure { message_id } => {
+                // Handle failure acknowledgment
+                if let Some(pending_ack) = self.pending_acks.get_mut(message_id) {
+                    warn!("Failure ACK received for Message {}", message_id);
+                    // We could implement special handling for failures here
+                    // For now, marking as acknowledged to prevent retries
+                    pending_ack.is_acknowledged = true;
+                }
+            }
+        }
+    }
+
     fn ack_success(&mut self, message: &Message) {
         let res = self.outqueue.enqueue(Message::new_ack(
             self.uid,
@@ -288,34 +330,41 @@ where
     }
 
     async fn send_message(&mut self, message: Message) -> Result<(), RadioError> {
+        // Centralized pending ack creation
         if message.req_ack() {
-            let pending_ack = PendingAck::new(
-                message.payload().clone(),
-                message.destination_id(),
-                message.ttl(),
-            );
-            if self.pending_acks.contains_key(&message.message_id()) {
-            } else {
-                self.pending_acks
-                    .insert(message.message_id(), pending_ack)
-                    .unwrap_or_else(|_| {
-                        error!("Error inserting pending ack");
-                        None
-                    });
-
-            }
+            self.add_pending_ack(&message).await;
         }
 
         self.tx_message(message).await?;
         Ok(())
     }
 
+    // New method for handling pending ack creation
+    async fn add_pending_ack(&mut self, message: &Message) {
+        let pending_ack = PendingAck::new(
+            message.payload().clone(),
+            message.destination_id(),
+            message.ttl(),
+        );
+
+        let message_id = message.message_id();
+        if !self.pending_acks.contains_key(&message_id) {
+            if let Err(_) = self.pending_acks.insert(message_id, pending_ack) {
+                error!("Error inserting pending ack for message: {}", message_id);
+            } else {
+                debug!("Added pending ack for message: {}", message_id);
+            }
+        }
+    }
+
     pub async fn discover_nodes(&mut self) {
+        // Use device config for discovery messages
         let res = self.outqueue.enqueue(Message::new_discovery(
             self.uid,
             None,
             3,
-            true
+            true,
+            self.device_config, // Pass device config instead of relying on global
         ));
 
         if let Err(e) = res {
@@ -326,7 +375,7 @@ where
     async fn tx_message(&mut self, message: Message) -> Result<(), RadioError> {
         let buffer: [u8; 70] = message.into();
         let params = &mut self.lora_config.tx_pkt_params;
-        
+
         self.radio
             .prepare_for_tx(
                 &self.lora_config.modulation,
@@ -339,9 +388,7 @@ where
         self.state = DeviceState::Transmitting;
         Timer::after(Duration::from_millis(100)).await;
         debug!("Sending message: {:?}", buffer);
-        self.radio
-            .tx()
-            .await?;
+        self.radio.tx().await?;
         self.state = DeviceState::Idle;
         Ok(())
     }
@@ -359,17 +406,15 @@ where
 
         Timer::after(Duration::from_millis(50)).await;
         match self.radio.rx(&self.lora_config.rx_pkt_params, buf).await {
-            Ok((size, _status)) => {
-                match Message::try_from(&mut buf[..size as usize]) {
-                    Ok(message) => {
-                        self.process_message(&message).await;
-                        self.enqueue_message(message).await;
-                    }
-                    Err(e) => {
-                        warn!("Received invalid message:{}", Display2Format(&e));
-                    }
+            Ok((size, _status)) => match Message::try_from(&mut buf[..size as usize]) {
+                Ok(message) => {
+                    self.process_message(&message).await;
+                    self.enqueue_message(message).await;
                 }
-            }
+                Err(e) => {
+                    warn!("Received invalid message:{}", Display2Format(&e));
+                }
+            },
             Err(RadioError::ReceiveTimeout) => {
                 // Do nothing
             }
@@ -381,31 +426,88 @@ where
     }
 
     pub async fn check_pending_acks(&mut self) {
-        let now = Instant::now();
-        for (id, ack) in self.pending_acks.iter_mut() {
-            if now.duration_since(ack.timestamp) > Duration::from_secs(ACK_WAIT_TIME) {
-                if ack.attempts < MAX_ACK_ATTEMPTS {
-                    let mut message = Message::new(
-                        self.uid,
-                        ack.destination_uid(),
-                        ack.payload().clone(),
-                        ack.ttl(),
-                        true,
-                    );
-                    message.set_message_id(*id);
-                    self.outqueue.enqueue(message).unwrap_or_else(|e| {
-                        error!("Error enqueueing message: {:?}", e);
-                    });
-                    ack.timestamp = Instant::now();
-                    ack.attempts += 1;
-                    debug!("Attempt {} for message: {}", ack.attempts, id);
-                } else {
-                    warn!("Max attempts reached for message: {}", id);
-                    ack.is_acknowledged = true;
+        // Collect messages that need retrying to avoid borrow checker issues
+        let mut to_retry = Vec::<(u32, u8), 16>::new();
+        let mut to_acknowledge = Vec::<u32, 16>::new();
+
+        {
+            let now = Instant::now();
+            // First pass: identify messages that need retry or acknowledgment
+            for (id, ack) in self.pending_acks.iter_mut() {
+                // Calculate backoff using exponential strategy
+                let backoff_ms = calculate_backoff(ack.attempts);
+                let retry_threshold = Duration::from_millis(backoff_ms);
+
+                if now.duration_since(ack.timestamp) > retry_threshold {
+                    if ack.attempts < MAX_ACK_ATTEMPTS {
+                        // Mark for retry (store ID and current attempts)
+                        to_retry.push((*id, ack.attempts)).unwrap_or_else(|_| {
+                            warn!("Retry list full, skipping message: {}", id);
+                        });
+
+                        // Update fields in place
+                        ack.timestamp = Instant::now();
+                        ack.attempts += 1;
+                    } else {
+                        warn!("Max attempts reached for message: {}", id);
+                        // Mark for acknowledgment (which will remove it)
+                        to_acknowledge.push(*id).unwrap_or_else(|_| {
+                            warn!("Acknowledge list full, skipping message: {}", id);
+                        });
+                    }
                 }
             }
         }
+
+        // Second pass: process retries
+        for (message_id, attempts) in to_retry {
+            self.retry_message(message_id).await;
+            let backoff_ms = calculate_backoff(attempts + 1);
+            debug!(
+                "Attempt {} for message {}, next retry in {}ms",
+                attempts + 1,
+                message_id,
+                backoff_ms
+            );
+        }
+
+        // Mark messages as acknowledged
+        for id in to_acknowledge {
+            if let Some(ack) = self.pending_acks.get_mut(&id) {
+                ack.is_acknowledged = true;
+            }
+        }
+
+        // Remove acknowledged messages
         self.pending_acks.retain(|_id, ack| !ack.is_acknowledged);
+    }
+
+    // Separate method for message retry logic
+    async fn retry_message(&mut self, message_id: u32) {
+        // Get information from pending ack
+        let destination_uid;
+        let payload;
+        let ttl;
+
+        {
+            // Scope the borrow to get the information we need
+            if let Some(ack) = self.pending_acks.get(&message_id) {
+                destination_uid = ack.destination_uid();
+                payload = ack.payload().clone();
+                ttl = ack.ttl();
+            } else {
+                error!("No pending ack found for message: {}", message_id);
+                return;
+            }
+        }
+
+        // Create and send the retry message
+        let mut message = Message::new(self.uid, destination_uid, payload, ttl, true);
+        message.set_message_id(message_id);
+
+        if let Err(e) = self.outqueue.enqueue(message) {
+            error!("Error enqueueing retry message: {:?}", e);
+        }
     }
 }
 
@@ -423,8 +525,8 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
         // Wait for a message
         device.try_wait_message(buf).await;
 
-        // Process InQueue
-        if !device.inqueue.len() == INQUEUE_SIZE - 1{
+        // Process InQueue when it's not full
+        if device.inqueue.len() < INQUEUE_SIZE - 1 {
             if let Err(e) = device.process_inqueue().await {
                 error!("Error processing inqueue: {:?}", e);
             }
@@ -445,6 +547,13 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
     }
 }
 
-pub fn device_state() -> DeviceState {
-    unsafe { DEVICE_STATE }
+// Helper function to get device state from outside
+pub fn device_state<RK, DLY, IN, OUT>(device: &LoraDevice<RK, DLY, IN, OUT>) -> DeviceState
+where
+    RK: RadioKind,
+    DLY: DelayNs,
+    IN: MessageQueue + 'static,
+    OUT: MessageQueue + 'static,
+{
+    device.device_state()
 }
