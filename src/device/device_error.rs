@@ -14,6 +14,8 @@ pub enum DeviceError {
     MessageError { source: MessageError },
     #[snafu(display("Radio error: {:?}", error))]
     RadioError { error: RadioError },
+    #[snafu(display("Invalid destination"))]
+    InvalidDestination,
 }
 
 impl From<RadioError> for DeviceError {

@@ -60,7 +60,7 @@ impl<'de> Deserialize<'de> for Text {
     {
         struct TextVisitor;
 
-        impl<'de> serde::de::Visitor<'de> for TextVisitor {
+        impl serde::de::Visitor<'_> for TextVisitor {
             type Value = Text;
 
             fn expecting(&self, formatter: &mut Formatter) -> core::fmt::Result {

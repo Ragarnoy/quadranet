@@ -20,9 +20,9 @@ fn test_message() {
     assert_eq!(message.destination_id(), Some(destination_id));
     assert_eq!(message.payload(), &payload);
     assert_eq!(message.ttl(), ttl);
-    assert_eq!(message.is_expired(), false);
-    assert_eq!(message.is_for_me(destination_id), true);
-    assert_eq!(message.is_for_me(source_id), false);
+    assert!(message.is_expired());
+    assert!(message.is_for_me(destination_id));
+    assert!(message.is_for_me(source_id));
 }
 
 #[test]
@@ -48,11 +48,11 @@ fn test_message_is_expired() {
 
     let mut message = Message::new(source_id, Some(destination_id), payload, ttl, false);
 
-    assert_eq!(message.is_expired(), false);
+    assert!(message.is_expired());
     for _ in 0..ttl {
         message.decrement_ttl();
     }
-    assert_eq!(message.is_expired(), true);
+    assert!(message.is_expired());
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn test_broadcast_message_creation() {
     let message = Message::new(source_id, None, payload, ttl, false);
 
     assert_eq!(message.destination_id(), None);
-    assert_eq!(message.is_for_me(Uid::try_from(0x02).unwrap()), true); // Assuming 'is_for_me' checks if the message is a broadcast
+    assert!(message.is_for_me(Uid::try_from(0x02).unwrap())); // Assuming 'is_for_me' checks if the message is a broadcast
 }
 
 #[test]
@@ -101,6 +101,6 @@ fn test_message_for_me() {
 
     let message = Message::new(source_id, Some(destination_id), payload, ttl, false);
 
-    assert_eq!(message.is_for_me(destination_id), true);
-    assert_eq!(message.is_for_me(source_id), false);
+    assert!(message.is_for_me(destination_id));
+    assert!(message.is_for_me(source_id));
 }
