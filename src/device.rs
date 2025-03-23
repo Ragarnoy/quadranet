@@ -17,9 +17,9 @@ use crate::device::pending_ack::*;
 use crate::message::payload::ack::AckType;
 use crate::message::payload::data::DataType;
 use crate::message::payload::route::RouteType;
-use crate::message::payload::Payload::{self, Ack, Discovery};
+use crate::message::payload::Payload::{self, Discovery};
 use crate::message::Message;
-use crate::route::routing_table::RoutingTable;
+use crate::route::routing_table::{RoutingTable, ROUTE_EXPIRY_SECONDS};
 use crate::route::Route;
 
 pub mod collections;
@@ -36,22 +36,14 @@ pub type Uid = NonZeroU8;
 pub type InQueue = Vec<Message, INQUEUE_SIZE>;
 pub type OutQueue = Vec<Message, OUTQUEUE_SIZE>;
 
-// Backoff configuration - moved to a central location
-pub const INITIAL_BACKOFF_MS: u64 = 500; // Start with 500ms backoff
-pub const BACKOFF_FACTOR: u64 = 2; // Double the backoff each retry
-pub const MAX_BACKOFF_MS: u64 = 10000; // Max backoff of 10 seconds
+const INITIAL_BACKOFF_MS: u64 = 500; // Start with 500ms backoff
+const BACKOFF_FACTOR: u64 = 2; // Double the backoff each retry
+const MAX_BACKOFF_MS: u64 = 10000; // Max backoff of 10 seconds
 
-// Calculate exponential backoff - implemented as a free function to avoid borrow checker issues
-pub fn calculate_backoff(attempt: u8) -> u64 {
-    if attempt == 0 {
-        return INITIAL_BACKOFF_MS;
-    }
-
-    // Calculate exponential backoff: initial_backoff * backoff_factor^attempt
-    let backoff = INITIAL_BACKOFF_MS * BACKOFF_FACTOR.pow(attempt as u32);
-
-    // Cap at maximum backoff
-    backoff.min(MAX_BACKOFF_MS)
+pub struct RxInfo {
+    pub rssi: i16,
+    pub snr: i16,
+    pub timestamp: Instant,
 }
 
 pub struct LoraDevice<RK, DLY, IN, OUT>
@@ -124,7 +116,7 @@ where
             outqueue,
             pending_acks: FnvIndexMap::new(),
             routing_table: RoutingTable::default(),
-            device_config, // Store config directly in the struct
+            device_config,
         }
     }
 
@@ -142,31 +134,34 @@ where
         &self.device_config
     }
 
-    pub async fn enqueue_message(&mut self, message: Message) {
+    /// Enqueue message with optional RX info
+    async fn enqueue_message_with_rx_info(&mut self, message: Message, rx_info: Option<&RxInfo>) {
         if let Some(receiver) = message.destination_id() {
             if receiver.get() == self.uid.get() {
                 if let Err(e) = self.inqueue.enqueue(message) {
                     error!("Error enqueueing message: {:?}", e);
                 }
             } else if !message.is_expired() {
-                if let Err(e) = self.route_message(message).await {
+                if let Err(e) = self.route_message(message, rx_info).await {
                     error!("Error routing message: {:?}", e);
                 }
             }
         } else if !message.is_expired() {
-            self.outqueue.enqueue(message.clone()).unwrap();
+            // Broadcast message
+            self.outqueue.enqueue(message.clone()).unwrap_or_else(|e| {
+                error!("Error enqueueing broadcast message to outqueue: {:?}", e);
+            });
+
             if let Err(e) = self.inqueue.enqueue(message) {
-                error!("Error enqueueing message: {:?}", e);
+                error!("Error enqueueing broadcast message to inqueue: {:?}", e);
             }
         }
     }
 
-    async fn route_message(&mut self, mut message: Message) -> Result<(), DeviceError> {
-        if let Ack(AckType::AckDiscovered {
-            hops: _hops,
-            last_hop,
-        }) = *message.payload()
-        {
+    /// Route message with optional signal quality information
+    async fn route_message(&mut self, mut message: Message, rx_info: Option<&RxInfo>) -> Result<(), DeviceError> {
+        // Process Ack messages as before
+        if let Payload::Ack(AckType::AckDiscovered { hops: _hops, last_hop }) = *message.payload() {
             let payload = AckType::AckDiscovered {
                 hops: 0,
                 last_hop: self.uid,
@@ -180,10 +175,29 @@ where
             );
         }
 
-        if let Some(route) = self
-            .routing_table
-            .lookup_route(message.destination_id().unwrap().get())
-        {
+        // Extract destination
+        let destination_id = match message.destination_id() {
+            Some(id) => id.get(),
+            None => return Err(DeviceError::InvalidDestination),
+        };
+
+        // Update link quality if we have signal information
+        if let Some(info) = rx_info {
+            let source_id = message.source_id().get();
+            self.routing_table.update_link_quality(source_id, info.rssi, info.snr);
+
+            // Create or update a direct route to the sender
+            let route = Route::with_quality(
+                message.source_id(),
+                1, // Direct hop
+                self.calculate_quality(info.rssi, info.snr as i8),
+            );
+            self.routing_table.update(source_id, route);
+        }
+
+        // Look up best route to destination
+        if let Some(route) = self.routing_table.lookup_route(destination_id) {
+            // Create forwarded message
             message = Message::new(
                 self.uid,
                 Some(route.next_hop),
@@ -192,34 +206,89 @@ where
                 message.req_ack(),
             );
             message.decrement_ttl();
+
+            // Attempt to transmit
             self.tx_message(message).await?;
+
+            // Record successful routing for link quality tracking
+            self.routing_table.record_successful_delivery(route.next_hop.get());
         } else {
+            // No route found, initiate route discovery if needed
+            if !self.is_route_discovery_in_progress(destination_id) {
+                self.initiate_route_discovery(destination_id).await;
+            }
             return Err(DeviceError::RouteNotFound);
         }
+
         Ok(())
     }
 
-    pub async fn process_inqueue(&mut self) -> Result<(), RadioError> {
-        let to_process = cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
-        for _ in 0..to_process {
-            if let Ok(message) = self.inqueue.dequeue() {
-                self.process_message(&message).await;
+    /// Calculate signal quality score (0-255)
+    fn calculate_quality(&self, rssi: i16, snr: i8) -> u8 {
+        // Normalize RSSI: -120dBm -> 0, -30dBm -> 100
+        let rssi_norm = ((rssi + 120) as f32 / 90.0 * 100.0).clamp(0.0, 100.0) as u16;
+
+        // Normalize SNR: -20dB -> 0, +10dB -> 100
+        let snr_norm = ((snr + 20) as f32 / 30.0 * 100.0).clamp(0.0, 100.0) as u16;
+
+        // Calculate combined score weighted toward SNR
+        let quality = (rssi_norm * 4 + snr_norm * 6) / 10;
+
+        // Scale to 0-255
+        ((quality * 255) / 100) as u8
+    }
+
+    /// Check if a route discovery is already in progress for a destination
+    fn is_route_discovery_in_progress(&self, destination: u8) -> bool {
+        for (_, ack) in self.pending_acks.iter() {
+            if let Discovery(_) = ack.payload() {
+                if let Some(dest) = ack.destination_uid() {
+                    if dest.get() == destination {
+                        return true;
+                    }
+                }
             }
         }
-        Ok(())
+        false
     }
 
-    pub async fn process_outqueue(&mut self) -> Result<(), RadioError> {
-        let to_transmit = cmp::min(self.outqueue.len(), MAX_OUTQUEUE_TRANSMIT);
-        for _ in 0..to_transmit {
-            if let Ok(message) = self.outqueue.dequeue() {
-                self.send_message(message).await?;
-            }
+    /// Initiate targeted route discovery for a specific destination
+    async fn initiate_route_discovery(&mut self, destination: u8) {
+        match NonZeroU8::new(destination) {
+            Some(dest_uid) => {
+                debug!("Initiating route discovery for node @{}", destination);
+
+                let message = Message::new_discovery(
+                    self.uid,
+                    Some(dest_uid),
+                    3,  // TTL
+                    true, // Request ACK
+                    self.device_config,
+                );
+
+                if let Err(e) = self.outqueue.enqueue(message) {
+                    error!("Error enqueueing targeted discovery message: {:?}", e);
+                }
+            },
+            None => warn!("Cannot initiate discovery for invalid destination 0"),
         }
-        Ok(())
     }
 
-    pub async fn process_message(&mut self, message: &Message) {
+    /// Process received messages with signal quality information
+    pub async fn process_message_with_rx_info(&mut self, message: &Message, rx_info: RxInfo) {
+        // First, update link quality
+        let source_id = message.source_id().get();
+        self.routing_table.update_link_quality(source_id, rx_info.rssi, rx_info.snr);
+
+        // Process the message content
+        self.process_message_internal(message, Some(&rx_info)).await;
+
+        // Enqueue the message if needed
+        self.enqueue_message_with_rx_info(message.clone(), Some(&rx_info)).await;
+    }
+
+    /// Internal message processing with optional signal info
+    async fn process_message_internal(&mut self, message: &Message, rx_info: Option<&RxInfo>) {
         match message.payload() {
             Payload::Data(data) => {
                 match data {
@@ -231,23 +300,33 @@ where
                     }
                 }
                 if message.req_ack() {
-                    self.ack_success(&message);
+                    self.ack_success(message);
                 }
             }
             Payload::Command(command) => {
                 debug!("Received command: {:?}", defmt::Debug2Format(command));
                 if message.req_ack() {
-                    self.ack_success(&message);
+                    self.ack_success(message);
                 }
             }
-            Ack(ack) => self.handle_ack_message(message, ack).await,
+            Payload::Ack(ack) => self.handle_ack_message(message, ack, rx_info).await,
             Payload::Route(route) => match route {
                 RouteType::Request => {}
                 RouteType::Response => {}
                 RouteType::Error => {}
             },
-            Discovery(discovery) => {
+            Payload::Discovery(discovery) => {
+                // For discovery messages, compute actual hop count
                 let hops = discovery.original_ttl - message.ttl();
+
+                // If we have signal info, create a route back to source
+                if let Some(info) = rx_info {
+                    let quality = self.calculate_quality(info.rssi, info.snr as i8);
+                    let route = Route::with_quality(message.source_id(), 1, quality);
+                    self.routing_table.update(message.source_id().get(), route);
+                }
+
+                // Send acknowledgment for discovery
                 let res = self.outqueue.enqueue(Message::new_ack(
                     self.uid,
                     Some(message.source_id()),
@@ -266,50 +345,75 @@ where
         }
     }
 
-    // Centralized ACK handling
-    async fn handle_ack_message(&mut self, message: &Message, ack: &AckType) {
+    pub async fn process_inqueue(&mut self) -> Result<(), RadioError> {
+        let to_process = cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
+        for _ in 0..to_process {
+            if let Ok(message) = self.inqueue.dequeue() {
+                // Use process_message_internal instead of the redundant process_message
+                self.process_message_internal(&message, None).await;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn process_outqueue(&mut self) -> Result<(), RadioError> {
+        let to_transmit = cmp::min(self.outqueue.len(), MAX_OUTQUEUE_TRANSMIT);
+        for _ in 0..to_transmit {
+            if let Ok(message) = self.outqueue.dequeue() {
+                self.send_message(message).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Handle acknowledgment messages with signal quality info
+    async fn handle_ack_message(&mut self, message: &Message, ack: &AckType, rx_info: Option<&RxInfo>) {
         match ack {
             AckType::Success { message_id } => {
                 if let Some(pending_ack) = self.pending_acks.get_mut(message_id) {
                     info!("Success ACK received for Message {}", message_id);
                     pending_ack.is_acknowledged = true;
-                }
-            }
-            AckType::AckDiscovered { hops, last_hop } => {
-                // Always update the routing table
-                self.routing_table.update(
-                    message.source_id().get(),
-                    Route {
-                        next_hop: *last_hop,
-                        hop_count: *hops,
-                    },
-                );
 
-                // Only update pending_acks if we originated the discovery
-                if message.source_id() == self.uid {
+                    // Record successful delivery
+                    self.routing_table.record_successful_delivery(message.source_id().get());
+                }
+            },
+            AckType::AckDiscovered { hops, last_hop } => {
+                // Create or update route using the hop count
+                let route = Route::new(*last_hop, *hops);
+
+                // If we have signal quality info, use it to set route quality
+                let mut enhanced_route = route;
+                if let Some(info) = rx_info {
+                    enhanced_route.quality = self.calculate_quality(info.rssi, info.snr as i8);
+                }
+
+                // Update the routing table
+                self.routing_table.update(message.source_id().get(), enhanced_route);
+
+                // Mark our discovery as acknowledged if we originated it
+                if message.destination_id() == Some(self.uid) {
                     if let Some(pending_ack) = self.pending_acks.get_mut(&message.message_id()) {
-                        info!(
-                            "Discovery ACK Complete for Message {}",
-                            message.message_id()
-                        );
+                        info!("Discovery ACK Complete for Message {}", message.message_id());
                         pending_ack.is_acknowledged = true;
                     } else {
-                        warn!(
-                            "Received unexpected AckDiscovered for our message ID: {}",
-                            message.message_id()
-                        );
+                        warn!("Received unexpected AckDiscovered for message ID: {}", message.message_id());
                     }
                 }
-            }
+            },
             AckType::Failure { message_id } => {
-                // Handle failure acknowledgment
                 if let Some(pending_ack) = self.pending_acks.get_mut(message_id) {
                     warn!("Failure ACK received for Message {}", message_id);
-                    // We could implement special handling for failures here
-                    // For now, marking as acknowledged to prevent retries
                     pending_ack.is_acknowledged = true;
+
+                    // Record failure for the route
+                    if let Some(dest) = pending_ack.destination_uid() {
+                        if let Some(route) = self.routing_table.lookup_route(dest.get()) {
+                            self.routing_table.record_failed_delivery(route.next_hop.get());
+                        }
+                    }
                 }
-            }
+            },
         }
     }
 
@@ -349,7 +453,7 @@ where
 
         let message_id = message.message_id();
         if !self.pending_acks.contains_key(&message_id) {
-            if let Err(_) = self.pending_acks.insert(message_id, pending_ack) {
+            if self.pending_acks.insert(message_id, pending_ack).is_err() {
                 error!("Error inserting pending ack for message: {}", message_id);
             } else {
                 debug!("Added pending ack for message: {}", message_id);
@@ -393,30 +497,47 @@ where
         Ok(())
     }
 
+    /// Enhanced try_wait_message with RSSI/SNR capture
     async fn try_wait_message(&mut self, buf: &mut [u8]) {
         self.state = DeviceState::Receiving;
-        self.radio
+        let result = self.radio
             .prepare_for_rx(
                 RxMode::Single(10000),
                 &self.lora_config.modulation,
                 &self.lora_config.rx_pkt_params,
             )
-            .await
-            .expect("Failed to prepare for RX");
+            .await;
+
+        if let Err(e) = result {
+            error!("Failed to prepare for RX: {:?}", e);
+            self.state = DeviceState::Idle;
+            return;
+        }
 
         Timer::after(Duration::from_millis(50)).await;
         match self.radio.rx(&self.lora_config.rx_pkt_params, buf).await {
-            Ok((size, _status)) => match Message::try_from(&mut buf[..size as usize]) {
-                Ok(message) => {
-                    self.process_message(&message).await;
-                    self.enqueue_message(message).await;
+            Ok((size, status)) => {
+                // Get RSSI and SNR from status
+                let rx_info = RxInfo {
+                    rssi: status.rssi,
+                    snr: status.snr,
+                    timestamp: Instant::now(),
+                };
+
+                debug!("Received packet: RSSI {}dBm, SNR {}dB", rx_info.rssi, rx_info.snr);
+
+                match Message::try_from(&mut buf[..size as usize]) {
+                    Ok(message) => {
+                        // Process with signal quality info
+                        self.process_message_with_rx_info(&message, rx_info).await;
+                    }
+                    Err(e) => {
+                        warn!("Received invalid message:{}", Display2Format(&e));
+                    }
                 }
-                Err(e) => {
-                    warn!("Received invalid message:{}", Display2Format(&e));
-                }
-            },
+            }
             Err(RadioError::ReceiveTimeout) => {
-                // Do nothing
+                // Do nothing on timeout
             }
             Err(e) => {
                 error!("Error receiving message: {:?}", e);
@@ -425,7 +546,9 @@ where
         self.state = DeviceState::Idle;
     }
 
-    pub async fn check_pending_acks(&mut self) {
+    /// Add route maintenance tasks to check_pending_acks
+    pub async fn check_pending_acks_and_routes(&mut self) {
+        // First handle pending acks
         // Collect messages that need retrying to avoid borrow checker issues
         let mut to_retry = Vec::<(u32, u8), 16>::new();
         let mut to_acknowledge = Vec::<u32, 16>::new();
@@ -454,6 +577,13 @@ where
                         to_acknowledge.push(*id).unwrap_or_else(|_| {
                             warn!("Acknowledge list full, skipping message: {}", id);
                         });
+
+                        // Record routing failure if this was to a specific destination
+                        if let Some(dest_uid) = ack.destination_uid() {
+                            if let Some(route) = self.routing_table.lookup_route(dest_uid.get()) {
+                                self.routing_table.record_failed_delivery(route.next_hop.get());
+                            }
+                        }
                     }
                 }
             }
@@ -463,12 +593,8 @@ where
         for (message_id, attempts) in to_retry {
             self.retry_message(message_id).await;
             let backoff_ms = calculate_backoff(attempts + 1);
-            debug!(
-                "Attempt {} for message {}, next retry in {}ms",
-                attempts + 1,
-                message_id,
-                backoff_ms
-            );
+            debug!("Attempt {} for message {}, next retry in {}ms", 
+               attempts + 1, message_id, backoff_ms);
         }
 
         // Mark messages as acknowledged
@@ -480,6 +606,49 @@ where
 
         // Remove acknowledged messages
         self.pending_acks.retain(|_id, ack| !ack.is_acknowledged);
+
+        // Perform route maintenance
+        self.routing_table.cleanup();
+
+        // Log routing table stats periodically (every ~10 calls)
+        static mut STATS_COUNTER: u8 = 0;
+        unsafe {
+            STATS_COUNTER = STATS_COUNTER.wrapping_add(1);
+            if STATS_COUNTER % 10 == 0 {
+                let stats = self.routing_table.stats();
+                info!("Routing: {} destinations, {} active, {} expired, avg. hops {}, avg. quality {}",
+                 stats.total_entries, stats.active_routes, stats.expired_routes,
+                 stats.avg_hop_count, stats.avg_quality);
+            }
+        }
+    }
+
+    /// Refresh routes that are nearing expiration
+    pub async fn refresh_routes(&mut self) {
+        // Check our routing table for routes that need refreshing
+        // This would be called periodically from a maintenance task
+
+        let mut to_refresh = Vec::<u8, 16>::new();
+
+        // Scan the routing table for routes that need refreshing
+        for dest_id in 1..=255u8 {
+            if dest_id != self.uid.get() &&
+                NonZeroU8::new(dest_id).is_some() &&
+                self.routing_table.needs_refresh(dest_id) {
+                to_refresh.push(dest_id).unwrap_or_else(|_| {
+                    warn!("Refresh list full, skipping node @{}", dest_id);
+                });
+            }
+        }
+
+        // Initiate discovery for routes that need refreshing
+        for dest_id in to_refresh {
+            // If we have a route but it's nearing expiration, refresh it
+            self.initiate_route_discovery(dest_id).await;
+
+            // Add a small delay between discoveries to avoid congestion
+            Timer::after(Duration::from_millis(100)).await;
+        }
     }
 
     // Separate method for message retry logic
@@ -520,7 +689,13 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
     IN: MessageQueue + 'static,
     OUT: MessageQueue + 'static,
 {
+    // Discover the network initially
     device.discover_nodes().await;
+
+    // Setup timers for periodic maintenance
+    let mut last_route_refresh = Instant::now();
+    let route_refresh_interval = Duration::from_secs(ROUTE_EXPIRY_SECONDS / 2);
+
     loop {
         // Wait for a message
         device.try_wait_message(buf).await;
@@ -539,12 +714,31 @@ pub async fn run_quadranet<RK, DLY, IN, OUT>(
             }
         }
 
-        // Check for pending acks
-        device.check_pending_acks().await;
+        // Check for pending acks and perform route maintenance
+        device.check_pending_acks_and_routes().await;
 
-        // Add a delay or yield the task to prevent it from hogging the CPU
+        // Periodically refresh routes
+        if Instant::now().duration_since(last_route_refresh) > route_refresh_interval {
+            device.refresh_routes().await;
+            last_route_refresh = Instant::now();
+        }
+
+        // Add a delay to prevent CPU hogging
         Timer::after(Duration::from_millis(10)).await;
     }
+}
+
+/// Calculate exponential backoff
+pub fn calculate_backoff(attempt: u8) -> u64 {
+    if attempt == 0 {
+        return INITIAL_BACKOFF_MS;
+    }
+
+    // Calculate exponential backoff: initial_backoff * backoff_factor^attempt
+    let backoff = INITIAL_BACKOFF_MS * BACKOFF_FACTOR.pow(attempt as u32);
+
+    // Cap at maximum backoff
+    backoff.min(MAX_BACKOFF_MS)
 }
 
 // Helper function to get device state from outside
