@@ -1,6 +1,6 @@
 use core::cmp;
 use core::num::NonZeroU8;
-
+use core::sync::atomic::{AtomicU8, Ordering};
 use config::lora::LoraConfig;
 use defmt::{debug, error, info, warn, Display2Format};
 use embassy_time::{Duration, Instant, Timer};
@@ -26,6 +26,8 @@ pub mod collections;
 pub mod config;
 pub mod device_error;
 pub mod pending_ack;
+
+static STATS_COUNTER: AtomicU8 = AtomicU8::new(0);
 
 const INQUEUE_SIZE: usize = 32;
 const OUTQUEUE_SIZE: usize = 32;
@@ -531,7 +533,6 @@ where
     }
     
     pub fn check_pending_acks_and_routes(&mut self) {
-        static mut STATS_COUNTER: u8 = 0;
         // First handle pending acks
         // Collect messages that need retrying to avoid borrow checker issues
         let mut to_retry = Vec::<(u32, u8), 16>::new();
@@ -578,7 +579,7 @@ where
             self.retry_message(message_id);
             let backoff_ms = calculate_backoff(attempts + 1);
             debug!("Attempt {} for message {}, next retry in {}ms", 
-               attempts + 1, message_id, backoff_ms);
+            attempts + 1, message_id, backoff_ms);
         }
 
         // Mark messages as acknowledged
@@ -595,15 +596,12 @@ where
         self.routing_table.cleanup();
 
         // Log routing table stats periodically (every ~10 calls)
-        
-        unsafe {
-            STATS_COUNTER = STATS_COUNTER.wrapping_add(1);
-            if STATS_COUNTER % 10 == 0 {
-                let stats = self.routing_table.stats();
-                info!("Routing: {} destinations, {} active, {} expired, avg. hops {}, avg. quality {}",
-                 stats.total_entries, stats.active_routes, stats.expired_routes,
-                 stats.avg_hop_count, stats.avg_quality);
-            }
+        let counter = STATS_COUNTER.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+        if counter % 10 == 0 {
+            let stats = self.routing_table.stats();
+            info!("Routing: {} destinations, {} active, {} expired, avg. hops {}, avg. quality {}",
+            stats.total_entries, stats.active_routes, stats.expired_routes,
+            stats.avg_hop_count, stats.avg_quality);
         }
     }
 
@@ -665,14 +663,17 @@ where
 }
 
 pub async fn run_quadranet<RK, DLY, IN, OUT>(
-    mut device: LoraDevice<RK, DLY, IN, OUT>,
+    device: Result<LoraDevice<RK, DLY, IN, OUT>, DeviceError>,
     buf: &mut [u8],
-) where
+) -> Result<(), DeviceError>
+where
     RK: RadioKind,
     DLY: DelayNs,
     IN: MessageQueue + 'static,
     OUT: MessageQueue + 'static,
 {
+    let mut device = device?;
+
     // Discover the network initially
     device.discover_nodes();
 

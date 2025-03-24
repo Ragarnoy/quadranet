@@ -17,26 +17,27 @@ pub struct LoraConfig {
 }
 
 impl LoraConfig {
-    pub fn new<RK, DLY>(lora: &mut LoRa<RK, DLY>) -> Self
+    /// Creates a new `LoRa` configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `RadioError` if any of the underlying configuration operations fail.
+    pub fn new<RK, DLY>(lora: &mut LoRa<RK, DLY>) -> Result<Self, RadioError>
     where
         RK: RadioKind,
         DLY: DelayNs,
     {
-        let modulation = modulation_params(lora).expect("Failed to create modulation params");
+        let modulation = modulation_params(lora)?;
+        let tx_pkt_params = create_tx_packet(lora, &modulation)?;
+        let rx_pkt_params = create_rx_packet(lora, &modulation)?;
 
-        let tx_pkt_params =
-            create_tx_packet(lora, &modulation).expect("Failed to create TX packet params");
-
-        let rx_pkt_params =
-            create_rx_packet(lora, &modulation).expect("Failed to create RX packet params");
-
-        Self {
+        Ok(Self {
             tx_power: TX_POWER,
             modulation,
             rx_pkt_params,
             tx_pkt_params,
             boosted: false,
-        }
+        })
     }
 }
 
