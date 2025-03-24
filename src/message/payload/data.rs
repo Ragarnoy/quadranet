@@ -100,7 +100,7 @@ impl Serialize for Binary {
 impl<'de> Deserialize<'de> for Binary {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         let bytes = <&[u8]>::deserialize(deserializer)?;
         if bytes.len() > MAX_PAYLOAD_SIZE {
