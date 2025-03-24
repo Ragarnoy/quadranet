@@ -122,14 +122,14 @@ impl LinkQuality {
 
     /// Record a successful message delivery
     pub fn record_success(&mut self) {
-        self.success_rate = ((self.success_rate as u16 * 9 + 100) / 10) as u8;
+        self.success_rate = ((u16::from(self.success_rate) * 9 + 100) / 10) as u8;
         self.failure_rate = self.failure_rate.saturating_sub(5);
         self.last_used = Instant::now();
     }
 
     /// Record a failed message delivery
     pub fn record_failure(&mut self) {
-        self.failure_rate = ((self.failure_rate as u16 * 9 + 100) / 10) as u8;
+        self.failure_rate = ((u16::from(self.failure_rate) * 9 + 100) / 10) as u8;
         self.success_rate = self.success_rate.saturating_sub(10);
         self.last_used = Instant::now();
     }
@@ -137,8 +137,8 @@ impl LinkQuality {
     /// Update RSSI and SNR values with exponential smoothing
     pub fn update_signal_metrics(&mut self, rssi: i16, snr: i16) {
         // Apply exponential smoothing (70% old, 30% new)
-        self.rssi = (self.rssi as f32 * 0.7 + rssi as f32 * 0.3) as i16;
-        self.snr = (self.snr as f32 * 0.7 + snr as f32 * 0.3) as i16;
+        self.rssi = (f32::from(self.rssi) * 0.7 + f32::from(rssi) * 0.3) as i16;
+        self.snr = (f32::from(self.snr) * 0.7 + f32::from(snr) * 0.3) as i16;
         self.last_used = Instant::now();
     }
 }

@@ -27,7 +27,7 @@ fn generate_message_id() -> u32 {
     MESSAGE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Format)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Format)]
 pub struct Message {
     message_id: u32,
     /// Source ID is the UID of the node that sent the message

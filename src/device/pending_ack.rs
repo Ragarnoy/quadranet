@@ -6,7 +6,7 @@ pub const MAX_PENDING_ACKS: usize = 32;
 pub const ACK_WAIT_TIME: u64 = 5;
 pub const MAX_ACK_ATTEMPTS: u8 = 5;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PendingAck {
     pub timestamp: Instant,    // When the message was sent
     pub attempts: u8,          // Number of transmission attempts
