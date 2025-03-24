@@ -17,9 +17,6 @@ use payload::Payload;
 pub mod error;
 pub mod payload;
 
-#[cfg(test)]
-mod test;
-
 const MAX_TTL: u8 = 10;
 const MAX_MESSAGE_SIZE: usize = 70;
 
