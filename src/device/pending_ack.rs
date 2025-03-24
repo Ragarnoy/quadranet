@@ -30,17 +30,17 @@ impl PendingAck {
     }
 
     /// Returns the payload of the message
-    pub fn payload(&self) -> &Payload {
+    pub const fn payload(&self) -> &Payload {
         &self.payload
     }
 
     /// Returns the destination UID of the message
-    pub fn destination_uid(&self) -> Option<Uid> {
+    pub const fn destination_uid(&self) -> Option<Uid> {
         self.destination_uid
     }
 
     /// Returns the time-to-live value of the message
-    pub fn ttl(&self) -> u8 {
+    pub const fn ttl(&self) -> u8 {
         self.ttl
     }
 
@@ -55,7 +55,7 @@ impl PendingAck {
     }
 
     /// Checks if the maximum number of retry attempts has been reached
-    pub fn is_max_attempts(&self) -> bool {
+    pub const fn is_max_attempts(&self) -> bool {
         self.attempts >= MAX_ACK_ATTEMPTS
     }
 

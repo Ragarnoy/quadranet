@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use defmt::Format;
 use serde::{Deserialize, Serialize};
 
-use crate::device::config::device_config::DeviceConfig;
+use crate::device::config::device::DeviceConfig;
 use crate::device::Uid;
 use crate::message::error::MessageError;
 use crate::message::payload::ack::AckType;
@@ -144,11 +144,11 @@ impl Message {
         )
     }
 
-    pub fn source_id(&self) -> Uid {
+    pub const fn source_id(&self) -> Uid {
         self.source_id
     }
 
-    pub fn message_id(&self) -> u32 {
+    pub const fn message_id(&self) -> u32 {
         self.message_id
     }
 
@@ -156,19 +156,19 @@ impl Message {
         self.message_id = message_id;
     }
 
-    pub fn req_ack(&self) -> bool {
+    pub const fn req_ack(&self) -> bool {
         self.req_ack
     }
 
-    pub fn destination_id(&self) -> Option<Uid> {
+    pub const fn destination_id(&self) -> Option<Uid> {
         self.destination_id
     }
 
-    pub fn payload(&self) -> &Payload {
+    pub const fn payload(&self) -> &Payload {
         &self.payload
     }
 
-    pub fn ttl(&self) -> u8 {
+    pub const fn ttl(&self) -> u8 {
         self.ttl
     }
 
@@ -176,7 +176,7 @@ impl Message {
         self.ttl = self.ttl.saturating_sub(1);
     }
 
-    pub fn is_expired(&self) -> bool {
+    pub const fn is_expired(&self) -> bool {
         self.ttl == 0
     }
 

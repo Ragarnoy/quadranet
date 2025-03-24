@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::message::payload::MAX_PAYLOAD_SIZE;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Format)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Format)]
 pub enum DataType {
     Text(Text),
     Binary(Binary),
@@ -14,20 +14,20 @@ impl DataType {
     pub fn new_text(text: &str) -> Self {
         let bytes = text.as_bytes();
         let len = bytes.len().min(MAX_PAYLOAD_SIZE);
-        let mut data = [0u8; MAX_PAYLOAD_SIZE];
+        let mut data = [0_u8; MAX_PAYLOAD_SIZE];
         data[..len].copy_from_slice(&bytes[..len]);
-        DataType::Text(Text { data, len })
+        Self::Text(Text { data, len })
     }
 
     pub fn new_binary(bytes: &[u8]) -> Self {
         let mut data = [0; MAX_PAYLOAD_SIZE];
         let len = bytes.len().min(MAX_PAYLOAD_SIZE);
         data[..len].copy_from_slice(&bytes[..len]);
-        DataType::Binary(Binary(data))
+        Self::Binary(Binary(data))
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Format)]
+#[derive(Clone, Debug, PartialEq, Eq, Format)]
 pub struct Text {
     data: [u8; MAX_PAYLOAD_SIZE],
     len: usize,
@@ -75,7 +75,7 @@ impl<'de> Deserialize<'de> for Text {
                 core::str::from_utf8(v).map_err(E::custom)?;
 
                 let len = v.len().min(MAX_PAYLOAD_SIZE);
-                let mut data = [0u8; MAX_PAYLOAD_SIZE];
+                let mut data = [0_u8; MAX_PAYLOAD_SIZE];
                 data[..len].copy_from_slice(&v[..len]);
                 Ok(Text { data, len })
             }
@@ -85,7 +85,7 @@ impl<'de> Deserialize<'de> for Text {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Format)]
+#[derive(Clone, Debug, PartialEq, Eq, Format)]
 pub struct Binary([u8; MAX_PAYLOAD_SIZE]);
 
 impl Serialize for Binary {
@@ -110,7 +110,7 @@ impl<'de> Deserialize<'de> for Binary {
         }
         let mut data = [0; MAX_PAYLOAD_SIZE];
         data[..bytes.len()].copy_from_slice(bytes);
-        Ok(Binary(data))
+        Ok(Self(data))
     }
 }
 
@@ -135,7 +135,7 @@ mod test {
             "🦀Rust🦀",     // UTF-8 multi-byte characters
         ];
 
-        for case in test_cases.iter() {
+        for case in &test_cases {
             let original_payload = Payload::Data(DataType::new_text(case));
             let original_message = Message::new(
                 Uid::try_from(1).unwrap(),

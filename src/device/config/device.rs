@@ -35,10 +35,6 @@ impl From<DeviceConfig> for u8 {
 impl From<u8> for DeviceConfig {
     fn from(value: u8) -> Self {
         match value {
-            0 => Self {
-                device_class: DeviceClass::A,
-                device_capabilities: DeviceCapabilities::Lora,
-            },
             1 => Self {
                 device_class: DeviceClass::A,
                 device_capabilities: DeviceCapabilities::LoraBle,
@@ -71,7 +67,10 @@ impl From<u8> for DeviceConfig {
                 device_class: DeviceClass::C,
                 device_capabilities: DeviceCapabilities::LoraWifi,
             },
-            _ => panic!("Invalid device config"),
+            _ => Self {
+                device_class: DeviceClass::A,
+                device_capabilities: DeviceCapabilities::Lora,
+            },
         }
     }
 }

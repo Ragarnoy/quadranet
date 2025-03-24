@@ -4,16 +4,16 @@ use crate::message::Message;
 
 #[derive(Debug, Format)]
 pub enum CollectionError {
-    Full,
     Empty,
+    Full,
     NoLock,
 }
 
 pub trait MessageStack {
-    fn push(&mut self, message: Message) -> Result<(), CollectionError>;
-    fn pop(&mut self) -> Result<Message, CollectionError>;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
+    fn pop(&mut self) -> Result<Message, CollectionError>;
+    fn push(&mut self, message: Message) -> Result<(), CollectionError>;
 }
 
 pub trait MessageQueue {

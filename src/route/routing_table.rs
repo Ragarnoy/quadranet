@@ -78,7 +78,7 @@ fn is_better_route(route1: &Route, route2: &Route) -> bool {
 
 impl RoutingTable {
     /// Create a new routing table with custom TTL
-    pub fn new(route_ttl: u64) -> Self {
+    pub const fn new(route_ttl: u64) -> Self {
         Self {
             routes: FnvIndexMap::new(),
             link_qualities: FnvIndexMap::new(),

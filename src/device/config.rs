@@ -1,2 +1,2 @@
-pub mod device_config;
-pub mod lora_config;
+pub mod device;
+pub mod lora;

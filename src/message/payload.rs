@@ -21,12 +21,11 @@ pub mod route;
 pub const MAX_PAYLOAD_SIZE: usize =
     MAX_MESSAGE_SIZE - size_of::<u8>() - size_of::<u8>() - size_of::<u8>() - size_of::<u8>();
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Format)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Format)]
 pub enum Payload {
     Data(DataType),
     Command(CommandType),
     Ack(AckType),
     Route(RouteType),
     Discovery(DiscoveryType),
-    // Other payload types...
 }

@@ -6,7 +6,7 @@ use crate::device::Uid;
 pub mod routing_table;
 
 /// Enhanced route object with quality metrics and timestamps
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Route {
     /// Next hop to reach the destination
     pub next_hop: Uid,
@@ -70,7 +70,7 @@ impl Route {
 }
 
 /// Metadata about the link quality for a specific connection
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LinkQuality {
     /// Signal strength indicator (-120 to -30 dBm typically)
     pub rssi: i16,
@@ -100,19 +100,20 @@ impl LinkQuality {
     }
 
     /// Calculate a quality score from the link metrics (0-255)
+    #[inline]
     pub fn calculate_quality(&self) -> u8 {
         // Normalize RSSI: -120dBm -> 0, -30dBm -> 100
-        let rssi_norm = ((self.rssi + 120) as f32 / 90.0 * 100.0).clamp(0.0, 100.0) as u16;
+        let rssi_norm = (f32::from(self.rssi + 120) / 90.0 * 100.0).clamp(0.0, 100.0) as u16;
 
         // Normalize SNR: -20dB -> 0, +10dB -> 100
-        let snr_norm = ((self.snr + 20) as f32 / 30.0 * 100.0).clamp(0.0, 100.0) as u16;
+        let snr_norm = (f32::from(self.snr + 20) / 30.0 * 100.0).clamp(0.0, 100.0) as u16;
 
         // Calculate combined score with weights
         // Success rate is most important, followed by SNR, then RSSI
-        let quality = (self.success_rate as u16 * 4
+        let quality = (u16::from(self.success_rate) * 4
             + snr_norm * 3
             + rssi_norm * 2
-            + (100 - self.failure_rate) as u16)
+            + u16::from(100 - self.failure_rate))
             / 10;
 
         // Scale to 0-255
