@@ -663,7 +663,7 @@ where
 }
 
 pub async fn run_quadranet<RK, DLY, IN, OUT>(
-    device: Result<LoraDevice<RK, DLY, IN, OUT>, DeviceError>,
+    device: LoraDevice<RK, DLY, IN, OUT>,
     buf: &mut [u8],
 ) -> Result<(), DeviceError>
 where
@@ -672,7 +672,7 @@ where
     IN: MessageQueue + 'static,
     OUT: MessageQueue + 'static,
 {
-    let mut device = device?;
+    let mut device = device;
 
     // Discover the network initially
     device.discover_nodes();
