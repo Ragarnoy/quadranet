@@ -2,7 +2,7 @@ use core::cmp;
 use core::num::NonZeroU8;
 use core::sync::atomic::{AtomicU8, Ordering};
 use config::lora::LoraConfig;
-use defmt::{debug, error, info, warn};
+use defmt::{error, info, warn, Display2Format};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
 use heapless::{FnvIndexMap, Vec};
@@ -15,9 +15,11 @@ use crate::device::config::device::DeviceConfig;
 use crate::device::device_error::DeviceError;
 use crate::device::pending_ack::{MAX_ACK_ATTEMPTS, MAX_PENDING_ACKS, PendingAck};
 use crate::message::payload::ack::AckType;
+use crate::message::payload::data::DataType;
+use crate::message::payload::route::RouteType;
 use crate::message::payload::Payload;
 use crate::message::Message;
-use crate::route::routing_table::{RoutingTable};
+use crate::route::routing_table::{RoutingTable, ROUTE_EXPIRY_SECONDS};
 use crate::route::Route;
 
 pub mod collections;
@@ -464,27 +466,27 @@ where
         }
     }
 
-    async fn listen_for_messages(&mut self, buf: &mut [u8]) {
-        // Set state to receiving
+    // Non-blocking listen with split RX approach
+    async fn listen(&mut self, buf: &mut [u8]) {
         self.state = DeviceState::Receiving;
 
-        // Prepare radio for reception - this is a quick operation
-        let prepare_result = self.radio.prepare_for_rx(
-            RxMode::Single(500), // Use much shorter timeout (500ms)
-            &self.lora_config.modulation,
-            &self.lora_config.rx_pkt_params,
-        ).await;
-
-        if let Err(e) = prepare_result {
-            error!("RX preparation failed: {:?}", e);
+        // Prepare radio for RX (a bit shorter timeout)
+        if let Err(e) = self.radio
+            .prepare_for_rx(
+                RxMode::Single(1000), // Shorter timeout for better responsiveness
+                &self.lora_config.modulation,
+                &self.lora_config.rx_pkt_params,
+            )
+            .await
+        {
+            error!("RX prep error: {:?}", e);
             self.state = DeviceState::Idle;
             return;
         }
 
-        // Important: Split the rx operation into start and complete
-        // Start the reception - non-blocking
+        // Split the receive operation: start RX but don't wait for completion yet
         if let Err(e) = self.radio.start_rx().await {
-            error!("Failed to start RX: {:?}", e);
+            warn!("Start RX error: {:?}", e);
             self.state = DeviceState::Idle;
             return;
         }
@@ -492,31 +494,33 @@ where
         // Short yield to allow other tasks to run
         Timer::after(Duration::from_millis(1)).await;
 
-        // Now complete the reception - this might block but with a shorter timeout
-        match self.radio.complete_rx(&self.lora_config.rx_pkt_params, buf).await {
-            Ok((size, status)) => {
-                // Process received data
+        // Now complete RX with timeout to avoid indefinite blocking
+        match embassy_time::with_timeout(
+            Duration::from_millis(500),
+            self.radio.complete_rx(&self.lora_config.rx_pkt_params, buf)
+        ).await {
+            Ok(Ok((size, status))) => {
+                // Capture signal info
                 let rx_info = RxInfo {
                     rssi: status.rssi,
                     snr: status.snr,
                 };
 
-                // Attempt to parse the message
-                match Message::try_from(&mut buf[..size as usize]) {
-                    Ok(message) => {
-                        debug!("Received message from {}", message.source_id().get());
-                        self.handle_message(message, Some(&rx_info)).await;
-                    },
-                    Err(e) => {
-                        warn!("Invalid message: {:?}", e);
-                    }
+                // Parse message
+                if let Ok(message) = Message::try_from(&mut buf[..size as usize]) {
+                    // Process with signal quality info
+                    self.handle_message(message, Some(&rx_info)).await;
                 }
-            },
-            Err(RadioError::ReceiveTimeout) => {
+            }
+            Ok(Err(RadioError::ReceiveTimeout)) => {
                 // Timeout is normal, do nothing
-            },
-            Err(e) => {
+            }
+            Ok(Err(e)) => {
                 warn!("RX error: {:?}", e);
+            }
+            Err(_) => {
+                // Timeout on our end, not radio timeout
+                // Just reset radio state and continue
             }
         }
 
@@ -567,8 +571,9 @@ where
     }
 }
 
+// Cooperative main loop that properly yields to other tasks
 pub async fn run_quadranet<RK, DLY, IN, OUT>(
-    mut device: LoraDevice<RK, DLY, IN, OUT>,
+    device: LoraDevice<RK, DLY, IN, OUT>,
     buf: &mut [u8],
 ) -> Result<(), DeviceError>
 where
@@ -577,42 +582,43 @@ where
     IN: MessageQueue + 'static,
     OUT: MessageQueue + 'static,
 {
+    let mut device = device;
+    let mut last_maintenance = Instant::now();
+    let mut last_discovery = Instant::now();
+
+    // Log that we're starting
     info!("Starting QuadraNet device on {}", device.uid().get());
 
     // Initial discovery
     device.discover_nodes();
 
-    // Setup maintenance timer
-    let mut last_maintenance = Instant::now();
-
-    // Main device loop
+    // Main cooperative scheduling loop
     loop {
-        // Try to receive packets with proper yielding
-        device.listen_for_messages(buf).await;
-
-        // Yield to other tasks
+        // Explicit yield point to allow other tasks to run
         Timer::after(Duration::from_millis(1)).await;
 
-        // Process inqueue
+        // Listen for incoming messages (now non-blocking)
+        device.listen(buf).await;
+
+        // Process queues with yield points
         device.process_inqueue();
-
-        // Yield again
         Timer::after(Duration::from_millis(1)).await;
 
-        // Process outqueue
         device.process_outqueue().await;
+        Timer::after(Duration::from_millis(1)).await;
 
         // Periodic maintenance (less frequent)
-        if Instant::now().duration_since(last_maintenance) > Duration::from_millis(1000) {
-            // Yield before maintenance
-            Timer::after(Duration::from_millis(1)).await;
-
+        if Instant::now().duration_since(last_maintenance) > Duration::from_millis(2000) {
             device.perform_maintenance().await;
             last_maintenance = Instant::now();
         }
 
-        // Always yield at end of loop
-        Timer::after(Duration::from_millis(5)).await;
+        // Occasional network discovery refresh
+        if Instant::now().duration_since(last_discovery) > Duration::from_secs(60) {
+            info!("Performing network discovery refresh");
+            device.discover_nodes();
+            last_discovery = Instant::now();
+        }
     }
 }
 
