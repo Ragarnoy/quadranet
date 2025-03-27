@@ -2,7 +2,7 @@ use core::cmp;
 use core::num::NonZeroU8;
 use core::sync::atomic::{AtomicU8, Ordering};
 use config::lora::LoraConfig;
-use defmt::{error, info, warn, Display2Format};
+use defmt::{error, info, warn};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
 use heapless::{FnvIndexMap, Vec};
@@ -15,11 +15,9 @@ use crate::device::config::device::DeviceConfig;
 use crate::device::device_error::DeviceError;
 use crate::device::pending_ack::{MAX_ACK_ATTEMPTS, MAX_PENDING_ACKS, PendingAck};
 use crate::message::payload::ack::AckType;
-use crate::message::payload::data::DataType;
-use crate::message::payload::route::RouteType;
 use crate::message::payload::Payload;
 use crate::message::Message;
-use crate::route::routing_table::{RoutingTable, ROUTE_EXPIRY_SECONDS};
+use crate::route::routing_table::{RoutingTable};
 use crate::route::Route;
 
 pub mod collections;
@@ -168,12 +166,7 @@ where
     // Core message processing
     fn process_received_message(&mut self, message: &Message, rx_info: Option<&RxInfo>) {
         match message.payload() {
-            Payload::Data(_) => {
-                if message.req_ack() {
-                    self.send_ack(message);
-                }
-            },
-            Payload::Command(_) => {
+            Payload::Command(_) | Payload::Data(_) => {
                 if message.req_ack() {
                     self.send_ack(message);
                 }
@@ -330,7 +323,7 @@ where
     fn process_inqueue(&mut self) {
         let to_process = cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
         for _ in 0..to_process {
-            if let Ok(_) = self.inqueue.dequeue() {
+            if self.inqueue.dequeue().is_ok() {
                 // Application layer handles the message content
             }
         }
@@ -419,7 +412,7 @@ where
                 let backoff_ms = calculate_backoff(ack.attempts);
                 let now = Instant::now();
 
-                if now.duration_since(ack.timestamp).as_millis() > backoff_ms as u64 {
+                if now.duration_since(ack.timestamp).as_millis() > backoff_ms {
                     if ack.attempts < MAX_ACK_ATTEMPTS {
                         // Ready to retry
                         to_retry.push(*id).unwrap_or(());
@@ -511,9 +504,6 @@ where
                     // Process with signal quality info
                     self.handle_message(message, Some(&rx_info)).await;
                 }
-            }
-            Ok(Err(RadioError::ReceiveTimeout)) => {
-                // Timeout is normal, do nothing
             }
             Ok(Err(e)) => {
                 warn!("RX error: {:?}", e);

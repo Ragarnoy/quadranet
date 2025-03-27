@@ -129,8 +129,8 @@ impl LinkQuality {
     #[inline]
     pub fn update_signal_metrics(&mut self, rssi: i16, snr: i16) {
         // Simplified exponential smoothing (75% old, 25% new)
-        self.rssi = ((self.rssi as i32 * 3 + rssi as i32) / 4) as i16;
-        self.snr = ((self.snr as i32 * 3 + snr as i32) / 4) as i16;
+        self.rssi = ((i32::from(self.rssi) * 3 + i32::from(rssi)) / 4) as i16;
+        self.snr = ((i32::from(self.snr) * 3 + i32::from(snr)) / 4) as i16;
         self.last_used = Instant::now();
     }
 }

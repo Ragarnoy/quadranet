@@ -68,7 +68,7 @@ impl RoutingTable {
             link.record_success();
 
             // Update routes using this link
-            for (_, route) in self.routes.iter_mut() {
+            for (_, route) in &mut self.routes {
                 if route.next_hop.get() == node_id {
                     route.quality = link.calculate_quality();
                     route.touch();
@@ -83,7 +83,7 @@ impl RoutingTable {
             link.record_failure();
 
             // Update routes using this link
-            for (_, route) in self.routes.iter_mut() {
+            for (_, route) in &mut self.routes {
                 if route.next_hop.get() == node_id {
                     route.quality = link.calculate_quality();
                     route.touch();
