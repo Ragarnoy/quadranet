@@ -2,23 +2,25 @@ use crate::device::Uid;
 use crate::message::payload::Payload;
 use embassy_time::Instant;
 
-pub const MAX_PENDING_ACKS: usize = 32;
+// Reduce buffer sizes to save memory
+pub const MAX_PENDING_ACKS: usize = 8;  // Reduced from 32
 pub const ACK_WAIT_TIME: u64 = 5;
-pub const MAX_ACK_ATTEMPTS: u8 = 5;
+pub const MAX_ACK_ATTEMPTS: u8 = 3;     // Reduced from 5
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PendingAck {
-    pub timestamp: Instant,    // When the message was sent
-    pub attempts: u8,          // Number of transmission attempts
-    pub is_acknowledged: bool, // Whether an ACK has been received
-    payload: Payload,          // Minimal information needed to recreate the message
-    destination_uid: Option<Uid>,
-    ttl: u8,
+    pub timestamp: Instant,     // When the message was sent
+    pub attempts: u8,           // Number of transmission attempts
+    pub is_acknowledged: bool,  // Whether an ACK has been received
+    payload: Payload,           // Message payload
+    destination_uid: Option<Uid>, // Destination
+    ttl: u8,                    // Time-to-live
 }
 
 impl PendingAck {
     /// Creates a new pending acknowledgment tracker
-    pub fn new(payload: Payload, destination_uid: Option<Uid>, ttl: u8) -> Self {
+    #[inline]
+    #[must_use] pub fn new(payload: Payload, destination_uid: Option<Uid>, ttl: u8) -> Self {
         Self {
             timestamp: Instant::now(),
             attempts: 0,
@@ -29,43 +31,45 @@ impl PendingAck {
         }
     }
 
-    /// Returns the payload of the message
-    pub const fn payload(&self) -> &Payload {
+    /// Returns the payload
+    #[inline]
+    #[must_use] pub const fn payload(&self) -> &Payload {
         &self.payload
     }
 
-    /// Returns the destination UID of the message
-    pub const fn destination_uid(&self) -> Option<Uid> {
+    /// Returns the destination UID
+    #[inline]
+    #[must_use] pub const fn destination_uid(&self) -> Option<Uid> {
         self.destination_uid
     }
 
-    /// Returns the time-to-live value of the message
-    pub const fn ttl(&self) -> u8 {
+    /// Returns the TTL
+    #[inline]
+    #[must_use] pub const fn ttl(&self) -> u8 {
         self.ttl
     }
 
-    /// Increments the attempt counter
+    /// Increments attempt counter
+    #[inline]
     pub fn increment_attempts(&mut self) {
         self.attempts += 1;
     }
 
-    /// Checks if the ACK has timed out based on the default timeout
-    pub fn is_expired(&self) -> bool {
-        self.timestamp.elapsed().as_secs() > ACK_WAIT_TIME
+    /// Marks as acknowledged
+    #[inline]
+    pub fn acknowledge(&mut self) {
+        self.is_acknowledged = true;
     }
 
-    /// Checks if the maximum number of retry attempts has been reached
-    pub const fn is_max_attempts(&self) -> bool {
-        self.attempts >= MAX_ACK_ATTEMPTS
-    }
-
-    /// Updates the timestamp to now
+    /// Updates timestamp
+    #[inline]
     pub fn update_timestamp(&mut self) {
         self.timestamp = Instant::now();
     }
 
-    /// Mark this pending ACK as acknowledged
-    pub fn acknowledge(&mut self) {
-        self.is_acknowledged = true;
+    /// Checks if max attempts reached
+    #[inline]
+    pub const fn is_max_attempts(&self) -> bool {
+        self.attempts >= MAX_ACK_ATTEMPTS
     }
 }
