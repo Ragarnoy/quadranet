@@ -29,8 +29,8 @@ pub mod pending_ack;
 
 static STATS_COUNTER: AtomicU8 = AtomicU8::new(0);
 
-const INQUEUE_SIZE: usize = 32;
-const OUTQUEUE_SIZE: usize = 32;
+const INQUEUE_SIZE: usize = 16;
+const OUTQUEUE_SIZE: usize = 16;
 const MAX_INQUEUE_PROCESS: usize = 5;
 const MAX_OUTQUEUE_TRANSMIT: usize = 5;
 
@@ -40,7 +40,7 @@ pub type OutQueue = Vec<Message, OUTQUEUE_SIZE>;
 
 const INITIAL_BACKOFF_MS: u64 = 500; // Start with 500ms backoff
 const BACKOFF_FACTOR: u64 = 2; // Double the backoff each retry
-const MAX_BACKOFF_MS: u64 = 10000; // Max backoff of 10 seconds
+const MAX_BACKOFF_MS: u64 = 5000; // Max backoff of 5 seconds
 
 pub struct RxInfo {
     pub rssi: i16,
