@@ -1,3 +1,4 @@
+#[cfg(feature = "defmt")]
 use defmt::Format;
 use embassy_time::Instant;
 
@@ -136,7 +137,8 @@ impl LinkQuality {
 }
 
 /// Compact stats structure
-#[derive(Debug, Copy, Clone, Format)]
+#[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub struct RoutingStats {
     pub total_entries: usize,
     pub active_routes: usize,

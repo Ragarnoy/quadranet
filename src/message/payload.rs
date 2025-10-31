@@ -1,5 +1,6 @@
 use core::mem::size_of;
 
+#[cfg(feature = "defmt")]
 use defmt::Format;
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +22,8 @@ pub mod route;
 pub const MAX_PAYLOAD_SIZE: usize =
     MAX_MESSAGE_SIZE - size_of::<u8>() - size_of::<u8>() - size_of::<u8>() - size_of::<u8>();
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Format)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub enum Payload {
     Data(DataType),
     Command(CommandType),

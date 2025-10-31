@@ -1,10 +1,12 @@
 use core::fmt::{Display, Formatter};
+#[cfg(feature = "defmt")]
 use defmt::Format;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::message::payload::MAX_PAYLOAD_SIZE;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Format)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub enum DataType {
     Text(Text),
     Binary(Binary),
@@ -27,7 +29,8 @@ impl DataType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Format)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub struct Text {
     data: [u8; MAX_PAYLOAD_SIZE],
     len: usize,
@@ -85,7 +88,8 @@ impl<'de> Deserialize<'de> for Text {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Format)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub struct Binary([u8; MAX_PAYLOAD_SIZE]);
 
 impl Serialize for Binary {

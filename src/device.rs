@@ -2,6 +2,7 @@ use config::lora::LoraConfig;
 use core::cmp;
 use core::num::NonZeroU8;
 use core::sync::atomic::{AtomicU8, Ordering};
+#[cfg(feature = "defmt")]
 use defmt::{error, info, warn};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
@@ -142,7 +143,10 @@ where
 
                 // Queue for application processing
                 if let Err(e) = self.inqueue.enqueue(message.clone()) {
+                    #[cfg(feature = "defmt")]
                     error!("Inqueue error: {:?}", e);
+                    #[cfg(not(feature = "defmt"))]
+                    let _ = e;
                 }
             } else if !message.is_expired() {
                 // Forward message
@@ -154,7 +158,10 @@ where
 
             // Queue locally
             if let Err(e) = self.inqueue.enqueue(message.clone()) {
+                #[cfg(feature = "defmt")]
                 error!("Inqueue broadcast error: {:?}", e);
+                #[cfg(not(feature = "defmt"))]
+                let _ = e;
             }
 
             // Relay to others (with TTL decrement)
@@ -162,7 +169,10 @@ where
             relay.decrement_ttl();
             if !relay.is_expired() {
                 if let Err(e) = self.outqueue.enqueue(relay) {
+                    #[cfg(feature = "defmt")]
                     error!("Outqueue broadcast error: {:?}", e);
+                    #[cfg(not(feature = "defmt"))]
+                    let _ = e;
                 }
             }
         }
@@ -236,7 +246,10 @@ where
                 );
 
                 if let Err(e) = self.outqueue.enqueue(ack_message) {
+                    #[cfg(feature = "defmt")]
                     error!("Discovery ack enqueue error: {:?}", e);
+                    #[cfg(not(feature = "defmt"))]
+                    let _ = e;
                 }
             }
             Payload::Route(_) => {
@@ -473,14 +486,20 @@ where
             )
             .await
         {
+            #[cfg(feature = "defmt")]
             error!("RX prep error: {:?}", e);
+            #[cfg(not(feature = "defmt"))]
+            let _ = e;
             self.state = DeviceState::Idle;
             return;
         }
 
         // Split the receive operation: start RX but don't wait for completion yet
         if let Err(e) = self.radio.start_rx().await {
+            #[cfg(feature = "defmt")]
             warn!("Start RX error: {:?}", e);
+            #[cfg(not(feature = "defmt"))]
+            let _ = e;
             self.state = DeviceState::Idle;
             return;
         }
@@ -509,7 +528,10 @@ where
                 }
             }
             Ok(Err(e)) => {
+                #[cfg(feature = "defmt")]
                 warn!("RX error: {:?}", e);
+                #[cfg(not(feature = "defmt"))]
+                let _ = e;
             }
             Err(_) => {
                 // Timeout on our end, not radio timeout
@@ -537,6 +559,7 @@ where
         }
 
         // Log stats occasionally (reduced frequency)
+        #[cfg(feature = "defmt")]
         if counter.is_multiple_of(100) {
             let stats = self.routing_table.stats();
             info!(
@@ -585,6 +608,7 @@ where
     let mut last_discovery = Instant::now();
 
     // Log that we're starting
+    #[cfg(feature = "defmt")]
     info!("Starting QuadraNet device on {}", device.uid().get());
 
     // Initial discovery
@@ -613,6 +637,7 @@ where
 
         // Occasional network discovery refresh
         if Instant::now().duration_since(last_discovery) > Duration::from_secs(60) {
+            #[cfg(feature = "defmt")]
             info!("Performing network discovery refresh");
             device.discover_nodes();
             last_discovery = Instant::now();

@@ -1,6 +1,7 @@
 use core::convert::TryFrom;
 use core::sync::atomic::{AtomicU32, Ordering};
 
+#[cfg(feature = "defmt")]
 use defmt::Format;
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +29,8 @@ fn generate_message_id() -> u32 {
     MESSAGE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Format)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub struct Message {
     id: u32,
     source_id: Uid,

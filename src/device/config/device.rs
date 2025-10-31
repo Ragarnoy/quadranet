@@ -1,7 +1,9 @@
+#[cfg(feature = "defmt")]
 use defmt::Format;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Format)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub struct DeviceConfig {
     pub device_class: DeviceClass,
     pub device_capabilities: DeviceCapabilities,
@@ -75,14 +77,16 @@ impl From<u8> for DeviceConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Format)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub enum DeviceClass {
     A,
     B,
     C,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Format, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub enum DeviceCapabilities {
     Lora,
     LoraBle,

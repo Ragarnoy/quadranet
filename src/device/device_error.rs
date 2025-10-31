@@ -1,10 +1,12 @@
+#[cfg(feature = "defmt")]
 use defmt::Format;
 use lora_phy::mod_params::RadioError;
 use snafu::Snafu;
 
 use crate::message::error::MessageError;
 
-#[derive(Debug, Snafu, Format)]
+#[derive(Debug, Snafu)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub enum DeviceError {
     #[snafu(display("Route not found"))]
     RouteNotFound,

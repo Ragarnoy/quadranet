@@ -1,8 +1,10 @@
+#[cfg(feature = "defmt")]
 use defmt::Format;
 
 use crate::message::Message;
 
-#[derive(Debug, Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub enum CollectionError {
     Empty,
     Full,
