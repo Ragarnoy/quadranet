@@ -17,7 +17,7 @@ use payload::Payload;
 pub mod error;
 pub mod payload;
 
-const MAX_TTL: u8 = 5;  // Reduced from 10
+const MAX_TTL: u8 = 5; // Reduced from 10
 const MAX_MESSAGE_SIZE: usize = 70;
 
 // Message ID counter
@@ -30,7 +30,7 @@ fn generate_message_id() -> u32 {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Format)]
 pub struct Message {
-    message_id: u32,
+    id: u32,
     source_id: Uid,
     destination_id: Option<Uid>,
     ttl: u8,
@@ -47,7 +47,7 @@ impl Message {
         require_ack: bool,
     ) -> Self {
         Self {
-            message_id: generate_message_id(),
+            id: generate_message_id(),
             source_id,
             destination_id,
             payload,
@@ -142,17 +142,38 @@ impl Message {
     }
 
     // Simple accessors
-    #[inline] pub const fn source_id(&self) -> Uid { self.source_id }
-    #[inline] pub const fn message_id(&self) -> u32 { self.message_id }
-    #[inline] pub fn set_message_id(&mut self, message_id: u32) { self.message_id = message_id; }
-    #[inline] pub const fn req_ack(&self) -> bool { self.req_ack }
-    #[inline] pub const fn destination_id(&self) -> Option<Uid> { self.destination_id }
-    #[inline] pub const fn payload(&self) -> &Payload { &self.payload }
-    #[inline] pub const fn ttl(&self) -> u8 { self.ttl }
+    #[inline]
+    pub const fn source_id(&self) -> Uid {
+        self.source_id
+    }
+    #[inline]
+    pub const fn message_id(&self) -> u32 {
+        self.id
+    }
+    #[inline]
+    pub const fn set_message_id(&mut self, message_id: u32) {
+        self.id = message_id;
+    }
+    #[inline]
+    pub const fn req_ack(&self) -> bool {
+        self.req_ack
+    }
+    #[inline]
+    pub const fn destination_id(&self) -> Option<Uid> {
+        self.destination_id
+    }
+    #[inline]
+    pub const fn payload(&self) -> &Payload {
+        &self.payload
+    }
+    #[inline]
+    pub const fn ttl(&self) -> u8 {
+        self.ttl
+    }
 
     // TTL operations
     #[inline]
-    pub fn decrement_ttl(&mut self) {
+    pub const fn decrement_ttl(&mut self) {
         self.ttl = self.ttl.saturating_sub(1);
     }
 

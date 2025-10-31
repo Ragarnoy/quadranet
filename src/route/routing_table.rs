@@ -1,13 +1,12 @@
-use embassy_time::{Duration, Instant};
-use heapless::FnvIndexMap;
-
 use crate::route::{LinkQuality, Route, RoutingStats};
+use embassy_time::{Duration, Instant};
+use heapless::index_map::FnvIndexMap;
 
 // Reduced constants for routing table configuration
-pub const MAX_ROUTES: usize = 16;            // Reduced from 32
-pub const MAX_ROUTES_PER_DEST: usize = 1;    // Reduced from 2 - only keep best route
-pub const ROUTE_EXPIRY_SECONDS: u64 = 300;   // Routes expire after 5 minutes
-pub const ROUTE_REFRESH_SECONDS: u64 = 180;  // Routes should be refreshed after 3 minutes
+pub const MAX_ROUTES: usize = 16; // Reduced from 32
+pub const MAX_ROUTES_PER_DEST: usize = 1; // Reduced from 2 - only keep best route
+pub const ROUTE_EXPIRY_SECONDS: u64 = 300; // Routes expire after 5 minutes
+pub const ROUTE_REFRESH_SECONDS: u64 = 180; // Routes should be refreshed after 3 minutes
 
 /// Memory-optimized routing table with minimalist design
 pub struct RoutingTable {
@@ -160,9 +159,8 @@ impl RoutingTable {
 
         // Clean up routes
         let expired_ttl = self.route_ttl;
-        self.routes.retain(|_, route| {
-            route.is_active && !route.is_expired(expired_ttl)
-        });
+        self.routes
+            .retain(|_, route| route.is_active && !route.is_expired(expired_ttl));
     }
 
     /// Get routing table statistics

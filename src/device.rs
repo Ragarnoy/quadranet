@@ -1,11 +1,12 @@
+use config::lora::LoraConfig;
 use core::cmp;
 use core::num::NonZeroU8;
 use core::sync::atomic::{AtomicU8, Ordering};
-use config::lora::LoraConfig;
 use defmt::{error, info, warn};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
-use heapless::{FnvIndexMap, Vec};
+use heapless::index_map::FnvIndexMap;
+use heapless::Vec;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::RadioKind;
 use lora_phy::{LoRa, RxMode};
@@ -13,11 +14,11 @@ use lora_phy::{LoRa, RxMode};
 use crate::device::collections::MessageQueue;
 use crate::device::config::device::DeviceConfig;
 use crate::device::device_error::DeviceError;
-use crate::device::pending_ack::{MAX_ACK_ATTEMPTS, MAX_PENDING_ACKS, PendingAck};
+use crate::device::pending_ack::{PendingAck, MAX_ACK_ATTEMPTS, MAX_PENDING_ACKS};
 use crate::message::payload::ack::AckType;
 use crate::message::payload::Payload;
 use crate::message::Message;
-use crate::route::routing_table::{RoutingTable};
+use crate::route::routing_table::RoutingTable;
 use crate::route::Route;
 
 pub mod collections;
@@ -28,7 +29,7 @@ pub mod pending_ack;
 static STATS_COUNTER: AtomicU8 = AtomicU8::new(0);
 
 // Reduce queue sizes to save memory
-const INQUEUE_SIZE: usize = 8;  // Reduced from 16
+const INQUEUE_SIZE: usize = 8; // Reduced from 16
 const OUTQUEUE_SIZE: usize = 8; // Reduced from 16
 const MAX_INQUEUE_PROCESS: usize = 4;
 const MAX_OUTQUEUE_TRANSMIT: usize = 4;
@@ -81,7 +82,7 @@ where
     IN: MessageQueue + 'static,
     OUT: MessageQueue + 'static,
 {
-    pub fn new(
+    pub const fn new(
         uid: Uid,
         radio: LoRa<RK, DLY>,
         lora_config: LoraConfig,
@@ -119,14 +120,18 @@ where
         // Update link quality if rx info provided
         if let Some(info) = rx_info {
             let source_id = message.source_id().get();
-            self.routing_table.update_link_quality(source_id, info.rssi, info.snr);
+            self.routing_table
+                .update_link_quality(source_id, info.rssi, info.snr);
 
             // Create direct route to sender
-            self.routing_table.update(source_id, Route::with_quality(
-                message.source_id(),
-                1,
-                calculate_quality(info.rssi, info.snr),
-            ));
+            self.routing_table.update(
+                source_id,
+                Route::with_quality(
+                    message.source_id(),
+                    1,
+                    calculate_quality(info.rssi, info.snr),
+                ),
+            );
         }
 
         // Process message based on destination
@@ -170,15 +175,16 @@ where
                 if message.req_ack() {
                     self.send_ack(message);
                 }
-            },
+            }
             Payload::Ack(ack) => {
                 match ack {
                     AckType::Success { message_id } => {
                         if let Some(pending) = self.pending_acks.get_mut(message_id) {
                             pending.acknowledge();
-                            self.routing_table.record_successful_delivery(message.source_id().get());
+                            self.routing_table
+                                .record_successful_delivery(message.source_id().get());
                         }
-                    },
+                    }
                     AckType::AckDiscovered { hops, last_hop } => {
                         // Update route with discovery information
                         let mut route = Route::new(*last_hop, *hops);
@@ -191,25 +197,28 @@ where
 
                         // Check if this was our discovery request
                         if message.destination_id() == Some(self.uid) {
-                            if let Some(pending) = self.pending_acks.get_mut(&message.message_id()) {
+                            if let Some(pending) = self.pending_acks.get_mut(&message.message_id())
+                            {
                                 pending.acknowledge();
                             }
                         }
-                    },
+                    }
                     AckType::Failure { message_id } => {
                         if let Some(pending) = self.pending_acks.get_mut(message_id) {
                             pending.acknowledge();
 
                             // Record routing failure
                             if let Some(dest_uid) = pending.destination_uid() {
-                                if let Some(route) = self.routing_table.lookup_route(dest_uid.get()) {
-                                    self.routing_table.record_failed_delivery(route.next_hop.get());
+                                if let Some(route) = self.routing_table.lookup_route(dest_uid.get())
+                                {
+                                    self.routing_table
+                                        .record_failed_delivery(route.next_hop.get());
                                 }
                             }
                         }
-                    },
+                    }
                 }
-            },
+            }
             Payload::Discovery(discovery) => {
                 // Compute hop count
                 let hops = discovery.original_ttl - message.ttl();
@@ -229,10 +238,10 @@ where
                 if let Err(e) = self.outqueue.enqueue(ack_message) {
                     error!("Discovery ack enqueue error: {:?}", e);
                 }
-            },
+            }
             Payload::Route(_) => {
                 // Handle route messages if needed
-            },
+            }
         }
     }
 
@@ -277,7 +286,8 @@ where
 
             // Transmit
             if self.tx_message(message).await.is_ok() {
-                self.routing_table.record_successful_delivery(route.next_hop.get());
+                self.routing_table
+                    .record_successful_delivery(route.next_hop.get());
                 return true;
             }
         } else {
@@ -307,13 +317,8 @@ where
     // Start route discovery
     fn initiate_route_discovery(&mut self, destination: u8) {
         if let Some(dest_uid) = NonZeroU8::new(destination) {
-            let message = Message::new_discovery(
-                self.uid,
-                Some(dest_uid),
-                3,
-                true,
-                self.device_config,
-            );
+            let message =
+                Message::new_discovery(self.uid, Some(dest_uid), 3, true, self.device_config);
 
             let _ = self.outqueue.enqueue(message);
         }
@@ -387,13 +392,7 @@ where
 
     // Start network discovery
     pub fn discover_nodes(&mut self) {
-        let discovery_message = Message::new_discovery(
-            self.uid,
-            None,
-            3,
-            true,
-            self.device_config,
-        );
+        let discovery_message = Message::new_discovery(self.uid, None, 3, true, self.device_config);
 
         let _ = self.outqueue.enqueue(discovery_message);
     }
@@ -425,7 +424,8 @@ where
                         // Record failure
                         if let Some(dest_uid) = ack.destination_uid() {
                             if let Some(route) = self.routing_table.lookup_route(dest_uid.get()) {
-                                self.routing_table.record_failed_delivery(route.next_hop.get());
+                                self.routing_table
+                                    .record_failed_delivery(route.next_hop.get());
                             }
                         }
                     }
@@ -464,7 +464,8 @@ where
         self.state = DeviceState::Receiving;
 
         // Prepare radio for RX (a bit shorter timeout)
-        if let Err(e) = self.radio
+        if let Err(e) = self
+            .radio
             .prepare_for_rx(
                 RxMode::Single(1000), // Shorter timeout for better responsiveness
                 &self.lora_config.modulation,
@@ -490,8 +491,10 @@ where
         // Now complete RX with timeout to avoid indefinite blocking
         match embassy_time::with_timeout(
             Duration::from_millis(500),
-            self.radio.complete_rx(&self.lora_config.rx_pkt_params, buf)
-        ).await {
+            self.radio.complete_rx(&self.lora_config.rx_pkt_params, buf),
+        )
+        .await
+        {
             Ok(Ok((size, status))) => {
                 // Capture signal info
                 let rx_info = RxInfo {
@@ -526,16 +529,20 @@ where
         self.routing_table.cleanup();
 
         // Occasionally refresh routes
-        let counter = STATS_COUNTER.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
-        if counter % 50 == 0 {
+        let counter = STATS_COUNTER
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_add(1);
+        if counter.is_multiple_of(50) {
             self.refresh_routes().await;
         }
 
         // Log stats occasionally (reduced frequency)
-        if counter % 100 == 0 {
+        if counter.is_multiple_of(100) {
             let stats = self.routing_table.stats();
-            info!("Routes: {} total, {} active, {} qual",
-                 stats.total_entries, stats.active_routes, stats.avg_quality);
+            info!(
+                "Routes: {} total, {} active, {} qual",
+                stats.total_entries, stats.active_routes, stats.avg_quality
+            );
         }
     }
 
@@ -548,9 +555,10 @@ where
                 break; // Limit to just a few at a time
             }
 
-            if dest_id != self.uid.get() &&
-                NonZeroU8::new(dest_id).is_some() &&
-                self.routing_table.needs_refresh(dest_id) {
+            if dest_id != self.uid.get()
+                && NonZeroU8::new(dest_id).is_some()
+                && self.routing_table.needs_refresh(dest_id)
+            {
                 self.initiate_route_discovery(dest_id);
                 count += 1;
 

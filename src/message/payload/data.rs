@@ -36,7 +36,7 @@ pub struct Text {
 impl Display for Text {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match core::str::from_utf8(&self.data[..self.len]) {
-            Ok(content) => write!(f, "{}", content),
+            Ok(content) => write!(f, "{content}"),
             Err(_) => write!(f, "<invalid UTF-8>"),
         }
     }
