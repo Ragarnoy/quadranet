@@ -32,8 +32,7 @@ static STATS_COUNTER: AtomicU8 = AtomicU8::new(0);
 // Reduce queue sizes to save memory
 const INQUEUE_SIZE: usize = 8; // Reduced from 16
 const OUTQUEUE_SIZE: usize = 8; // Reduced from 16
-const MAX_INQUEUE_PROCESS: usize = 4;
-const MAX_OUTQUEUE_TRANSMIT: usize = 4;
+const MAX_OUTQUEUE_TRANSMIT: usize = 12;
 
 pub type Uid = NonZeroU8;
 pub type InQueue = Vec<Message, INQUEUE_SIZE>;
@@ -144,7 +143,7 @@ where
                 // Queue for application processing
                 if let Err(e) = self.inqueue.enqueue(message.clone()) {
                     #[cfg(feature = "defmt")]
-                    error!("Inqueue error: {:?}", e);
+                    error!("Inqueue full: {:?}", e);
                     #[cfg(not(feature = "defmt"))]
                     let _ = e;
                 }
@@ -270,7 +269,12 @@ where
             false,
         );
 
-        let _ = self.outqueue.enqueue(ack_message);
+        if let Err(e) = self.outqueue.enqueue(ack_message) {
+            #[cfg(feature = "defmt")]
+            warn!("ACK enqueue failed: {:?}", e);
+            #[cfg(not(feature = "defmt"))]
+            let _ = e;
+        }
     }
 
     // Simplified routing - returns success status rather than Result
@@ -337,19 +341,11 @@ where
         }
     }
 
-    // Process messages in inqueue
-    fn process_inqueue(&mut self) {
-        let to_process = cmp::min(self.inqueue.len(), MAX_INQUEUE_PROCESS);
-        for _ in 0..to_process {
-            if self.inqueue.dequeue().is_ok() {
-                // Application layer handles the message content
-            }
-        }
-    }
-
     // Process outqueue and send messages
     async fn process_outqueue(&mut self) {
-        let to_transmit = cmp::min(self.outqueue.len(), MAX_OUTQUEUE_TRANSMIT);
+        let queue_len = self.outqueue.len();
+        let to_transmit = cmp::min(queue_len, MAX_OUTQUEUE_TRANSMIT);
+
         for _ in 0..to_transmit {
             if let Ok(message) = self.outqueue.dequeue() {
                 // Track for acknowledgment if needed
@@ -358,7 +354,12 @@ where
                 }
 
                 // Attempt transmission
-                let _ = self.tx_message(message).await;
+                if let Err(e) = self.tx_message(message).await {
+                    #[cfg(feature = "defmt")]
+                    error!("TX failed: {:?}", defmt::Debug2Format(&e));
+                    #[cfg(not(feature = "defmt"))]
+                    let _ = e;
+                }
             }
         }
     }
@@ -480,7 +481,7 @@ where
         if let Err(e) = self
             .radio
             .prepare_for_rx(
-                RxMode::Single(1000), // Shorter timeout for better responsiveness
+                RxMode::Single(2000), // Shorter timeout for better responsiveness
                 &self.lora_config.modulation,
                 &self.lora_config.rx_pkt_params,
             )
@@ -507,14 +508,14 @@ where
         // Short yield to allow other tasks to run
         Timer::after(Duration::from_millis(1)).await;
 
-        // Now complete RX with timeout to avoid indefinite blocking
-        match embassy_time::with_timeout(
-            Duration::from_millis(500),
-            self.radio.complete_rx(&self.lora_config.rx_pkt_params, buf),
-        )
-        .await
+        // Complete RX - let it run to completion to avoid radio lockups
+        // The timeout is already handled by RxMode::Single(2000) above
+        match self
+            .radio
+            .complete_rx(&self.lora_config.rx_pkt_params, buf)
+            .await
         {
-            Ok(Ok((size, status))) => {
+            Ok((size, status)) => {
                 // Capture signal info
                 let rx_info = RxInfo {
                     rssi: status.rssi,
@@ -522,20 +523,24 @@ where
                 };
 
                 // Parse message
-                if let Ok(message) = Message::try_from(&mut buf[..size as usize]) {
-                    // Process with signal quality info
-                    self.handle_message(message, Some(&rx_info)).await;
+                match Message::try_from(&mut buf[..size as usize]) {
+                    Ok(message) => {
+                        // Process with signal quality info
+                        self.handle_message(message, Some(&rx_info)).await;
+                    }
+                    Err(e) => {
+                        #[cfg(feature = "defmt")]
+                        warn!("Parse failed: {:?}", defmt::Debug2Format(&e));
+                        #[cfg(not(feature = "defmt"))]
+                        let _ = e;
+                    }
                 }
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 #[cfg(feature = "defmt")]
                 warn!("RX error: {:?}", e);
                 #[cfg(not(feature = "defmt"))]
                 let _ = e;
-            }
-            Err(_) => {
-                // Timeout on our end, not radio timeout
-                // Just reset radio state and continue
             }
         }
 
@@ -622,10 +627,7 @@ where
         // Listen for incoming messages (now non-blocking)
         device.listen(buf).await;
 
-        // Process queues with yield points
-        device.process_inqueue();
-        Timer::after(Duration::from_millis(1)).await;
-
+        // Process queue with yield points
         device.process_outqueue().await;
         Timer::after(Duration::from_millis(1)).await;
 
@@ -636,7 +638,7 @@ where
         }
 
         // Occasional network discovery refresh
-        if Instant::now().duration_since(last_discovery) > Duration::from_secs(60) {
+        if Instant::now().duration_since(last_discovery) > Duration::from_secs(120) {
             #[cfg(feature = "defmt")]
             info!("Performing network discovery refresh");
             device.discover_nodes();

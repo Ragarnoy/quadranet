@@ -6,10 +6,10 @@ resolver = "3"
 
 [features]
 default = []
-defmt = ["dep:defmt", "embassy-time/defmt", "embassy-time/defmt-timestamp-uptime"]
+defmt = ["dep:defmt", "embassy-time/defmt", "embassy-time/defmt-timestamp-uptime", "lora-phy/defmt-03"]
 
 [dependencies]
-lora-phy = { git = "https://github.com/lora-rs/lora-rs", version = "3.0.2-alpha", default-features = false }
+lora-phy = { git = "https://github.com/lora-rs/lora-rs", version = "3.0.2-alpha" }
 embedded-hal-async = "1.0.0"
 snafu = { version = "0.8", default-features = false }
 heapless = "0.9.1"
